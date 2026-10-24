@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: music-cotmix-ai
+    runtime: python
+    region: singapore
+    plan: free
+    branch: main
+    buildCommand: "pip install --upgrade pip && pip install -r requirements.txt"
+    startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1"
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: BACKBONE
+        value: cnn
+      - key: MODEL_PATH
+        value: models/checkpoints/music_cotmix_cnn.pt
+      - key: DEVICE
+        value: cpu
+      - key: CONFIDENCE_THRESHOLD
+        value: "0.80"
