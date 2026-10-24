@@ -11,6 +11,7 @@ experiments_logs/
 dist/
 build/
 *.torchscript.pt
+data/MusicGenre/*.pt
 .DS_Store
 Thumbs.db
 
