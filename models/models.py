@@ -1,11 +1,6 @@
 import torch
 from torch import nn
 
-try:
-    import timm
-except ImportError:
-    timm = None
-
 
 def get_backbone_class(backbone_name):
     """Return the algorithm class with the given name."""
@@ -28,6 +23,10 @@ class DinoV3(nn.Module):
     """
     def __init__(self, configs):
         super(DinoV3, self).__init__()
+        try:
+            import timm
+        except ImportError:
+            timm = None
         if timm is None:
             raise ImportError("Thư viện 'timm' cần thiết cho DinoV3. Vui lòng cài đặt timm hoặc sử dụng backbone AudioCNN.")
         model_name = getattr(configs, 'dino_model_name', 'vit_small_patch16_dinov3')

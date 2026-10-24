@@ -9,6 +9,7 @@ import psutil
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.concurrency import run_in_threadpool
 from app.service import MusicGenrePredictor
 
 app = FastAPI(
@@ -79,7 +80,7 @@ async def predict_genre(file: UploadFile = File(...)):
         audio_bytes = await file.read()
         if len(audio_bytes) < 100:
             raise ValueError("Tệp âm thanh quá ngắn hoặc không có dữ liệu.")
-        result = p.predict(audio_bytes)
+        result = await run_in_threadpool(p.predict, audio_bytes)
         result["filename"] = file.filename or "uploaded_audio.wav"
         return JSONResponse(content=result)
     except Exception as e:
@@ -102,7 +103,7 @@ def get_sample_audio(genre: str):
 
 
 @app.post("/sample-predict/{genre}", tags=["Presets"])
-def predict_sample_audio(genre: str):
+async def predict_sample_audio(genre: str):
     """Instantly evaluates a bundled sample audio without uploading."""
     p = get_predictor()
 
@@ -115,7 +116,7 @@ def predict_sample_audio(genre: str):
         raise HTTPException(status_code=404, detail="Không tìm thấy file mẫu")
 
     sample_path = os.path.join(genre_dir, files[0])
-    result = p.predict(sample_path)
+    result = await run_in_threadpool(p.predict, sample_path)
     result["sample_genre"] = genre
     result["filename"] = files[0]
     result["audio_url"] = f"/samples/{genre.lower()}"
@@ -199,6 +200,8 @@ def serve_ui():
     </style>
 </head>
 <body class="min-h-screen flex antialiased select-none">
+    <!-- NON-BLOCKING TOAST NOTIFICATIONS -->
+    <div id="toast-container" class="fixed top-5 right-5 z-50 flex flex-col space-y-3 pointer-events-none max-w-sm sm:max-w-md w-full px-4"></div>
 
     <!-- LEFT SIDEBAR -->
     <aside class="w-64 border-r border-[#17233f] bg-[#090e1d] flex flex-col justify-between shrink-0 fixed inset-y-0 left-0 z-30">
@@ -758,7 +761,7 @@ def serve_ui():
         // Play / Pause Toggle
         function togglePlay() {
             if (!audioPlayer.src) {
-                alert('Chưa có tệp âm thanh nào được nạp. Hãy chọn một file, bấm mẫu thử hoặc ghi âm trước.');
+                showToast('Chưa có tệp âm thanh nào được nạp. Hãy chọn một file, bấm mẫu thử hoặc ghi âm trước.', 'warning');
                 return;
             }
             if (isPlaying) {
@@ -832,7 +835,7 @@ def serve_ui():
                     }, 1000);
 
                 } catch (err) {
-                    alert('Không thể truy cập microphone: ' + err.message);
+                    showToast('Không thể truy cập microphone: ' + err.message, 'error');
                 }
             } else {
                 // Stop recording & finalize PCM WAV
@@ -935,18 +938,68 @@ def serve_ui():
             return new Blob([buffer], { type: 'audio/wav' });
         }
 
+        // Non-blocking Toast Notification System
+        function showToast(message, type = 'info', duration = 5000) {
+            const container = document.getElementById('toast-container');
+            if (!container) return;
+
+            const toast = document.createElement('div');
+            const isError = type === 'error';
+            const isWarning = type === 'warning';
+            const isSuccess = type === 'success';
+
+            const bgClass = isError 
+                ? 'bg-rose-950/95 border-rose-700/80 text-rose-200' 
+                : isWarning 
+                    ? 'bg-amber-950/95 border-amber-700/80 text-amber-200'
+                    : isSuccess 
+                        ? 'bg-emerald-950/95 border-emerald-700/80 text-emerald-200'
+                        : 'bg-slate-900/95 border-blue-600/80 text-slate-200';
+
+            const icon = isError ? '⚠️' : isWarning ? '⚡' : isSuccess ? '✅' : 'ℹ️';
+
+            toast.className = `pointer-events-auto flex items-start space-x-3 px-4 py-3 rounded-xl border shadow-2xl backdrop-blur-md transition-all duration-300 transform translate-y-2 opacity-0 w-full ${bgClass}`;
+            toast.innerHTML = `
+                <span class="text-base shrink-0 mt-0.5">${icon}</span>
+                <div class="flex-1 text-xs leading-relaxed">${message}</div>
+                <button onclick="this.parentElement.remove()" class="text-slate-400 hover:text-white shrink-0 ml-2 text-base leading-none">&times;</button>
+            `;
+
+            container.appendChild(toast);
+            requestAnimationFrame(() => {
+                toast.classList.remove('translate-y-2', 'opacity-0');
+            });
+
+            if (duration > 0) {
+                setTimeout(() => {
+                    toast.classList.add('opacity-0', '-translate-y-2');
+                    setTimeout(() => toast.remove(), 300);
+                }, duration);
+            }
+        }
+
+        let isPredicting = false;
+
         // Execute Prediction with Automatic Cold-Start Recovery
         async function executePrediction() {
+            if (isPredicting) return;
+
             if (!currentFileObj && !currentLoadedGenre) {
-                alert('Vui lòng chọn một tệp âm thanh, ghi âm qua mic hoặc chọn mẫu thử trước khi bấm dự đoán.');
+                showToast('Vui lòng chọn một tệp âm thanh, ghi âm qua mic hoặc chọn mẫu thử trước khi bấm dự đoán.', 'warning');
                 return;
             }
 
+            const runBtn = document.getElementById('run-predict-btn');
             const btnText = document.getElementById('predict-btn-text');
             const spinner = document.getElementById('predict-spinner');
             const btnIcon = document.getElementById('predict-btn-icon');
             const statusPill = document.getElementById('status-pill-badge');
 
+            isPredicting = true;
+            if (runBtn) {
+                runBtn.disabled = true;
+                runBtn.classList.add('opacity-75', 'cursor-not-allowed');
+            }
             btnText.innerText = 'Đang phân tích âm học...';
             spinner.classList.remove('hidden');
             btnIcon.classList.add('hidden');
@@ -956,73 +1009,81 @@ def serve_ui():
             const maxRetries = 2;
             let lastErr = null;
 
-            for (let attempt = 0; attempt <= maxRetries; attempt++) {
-                try {
-                    let data = null;
-                    if (currentFileObj) {
-                        const formData = new FormData();
-                        formData.append('file', currentFileObj);
-                        const res = await fetch('/predict', { method: 'POST', body: formData });
-                        if (res.status === 502 || res.status === 503 || res.status === 504) {
-                            if (attempt < maxRetries) {
-                                btnText.innerText = `Đang khởi động máy chủ (${attempt + 1}/${maxRetries})...`;
-                                await new Promise(r => setTimeout(r, 2500));
-                                continue;
+            try {
+                for (let attempt = 0; attempt <= maxRetries; attempt++) {
+                    try {
+                        let data = null;
+                        if (currentFileObj) {
+                            const formData = new FormData();
+                            formData.append('file', currentFileObj);
+                            const res = await fetch('/predict', { method: 'POST', body: formData });
+                            if (res.status === 502 || res.status === 503 || res.status === 504) {
+                                if (attempt < maxRetries) {
+                                    btnText.innerText = `Đang khởi động máy chủ (${attempt + 1}/${maxRetries})...`;
+                                    await new Promise(r => setTimeout(r, 2000));
+                                    continue;
+                                }
                             }
-                        }
-                        if (!res.ok) {
-                            const errData = await res.json().catch(() => ({}));
-                            throw new Error(errData.detail || 'Máy chủ trả về mã lỗi ' + res.status);
-                        }
-                        data = await res.json();
-                    } else if (currentLoadedGenre) {
-                        const genreKey = currentLoadedGenre.toLowerCase();
-                        const res = await fetch('/sample-predict/' + genreKey, { method: 'POST' });
-                        if (res.status === 502 || res.status === 503 || res.status === 504) {
-                            if (attempt < maxRetries) {
-                                btnText.innerText = `Đang khởi động máy chủ (${attempt + 1}/${maxRetries})...`;
-                                await new Promise(r => setTimeout(r, 2500));
-                                continue;
+                            if (!res.ok) {
+                                const errData = await res.json().catch(() => ({}));
+                                throw new Error(errData.detail || 'Máy chủ trả về mã lỗi ' + res.status);
                             }
+                            data = await res.json();
+                        } else if (currentLoadedGenre) {
+                            const genreKey = currentLoadedGenre.toLowerCase();
+                            const res = await fetch('/sample-predict/' + genreKey, { method: 'POST' });
+                            if (res.status === 502 || res.status === 503 || res.status === 504) {
+                                if (attempt < maxRetries) {
+                                    btnText.innerText = `Đang khởi động máy chủ (${attempt + 1}/${maxRetries})...`;
+                                    await new Promise(r => setTimeout(r, 2000));
+                                    continue;
+                                }
+                            }
+                            if (!res.ok) {
+                                const errData = await res.json().catch(() => ({}));
+                                throw new Error(errData.detail || 'Máy chủ trả về mã lỗi ' + res.status);
+                            }
+                            data = await res.json();
                         }
-                        if (!res.ok) {
-                            const errData = await res.json().catch(() => ({}));
-                            throw new Error(errData.detail || 'Máy chủ trả về mã lỗi ' + res.status);
+
+                        if (!data || !data.predicted_genre) {
+                            throw new Error('Dữ liệu kết quả không hợp lệ.');
                         }
-                        data = await res.json();
-                    }
 
-                    if (!data || !data.predicted_genre) {
-                        throw new Error('Dữ liệu kết quả không hợp lệ.');
-                    }
+                        renderPredictionResult(data);
+                        addHistoryRecord(data);
 
-                    renderPredictionResult(data);
-                    addHistoryRecord(data);
-
-                    statusPill.className = 'px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-950/60 text-emerald-400 border border-emerald-800';
-                    statusPill.innerText = 'Phân tích xong';
-                    lastErr = null;
-                    break;
-                } catch (err) {
-                    lastErr = err;
-                    if (attempt < maxRetries && (err.message.includes('502') || err.message.includes('503') || err.message.includes('Failed to fetch'))) {
-                        btnText.innerText = `Đang kết nối lại (${attempt + 1}/${maxRetries})...`;
-                        await new Promise(r => setTimeout(r, 2500));
-                        continue;
+                        statusPill.className = 'px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-950/60 text-emerald-400 border border-emerald-800';
+                        statusPill.innerText = 'Phân tích xong';
+                        lastErr = null;
+                        showToast(`Phân tích thành công: Thể loại <b>${data.predicted_genre}</b> (${((data.confidence || 0) * 100).toFixed(1)}%)`, 'success', 3500);
+                        break;
+                    } catch (err) {
+                        lastErr = err;
+                        if (attempt < maxRetries && (err.message.includes('502') || err.message.includes('503') || err.message.includes('Failed to fetch'))) {
+                            btnText.innerText = `Đang kết nối lại (${attempt + 1}/${maxRetries})...`;
+                            await new Promise(r => setTimeout(r, 2000));
+                            continue;
+                        }
+                        break;
                     }
-                    break;
                 }
-            }
 
-            if (lastErr) {
-                alert('Lỗi dự đoán: ' + lastErr.message + '\n\n(Lưu ý: Trên gói Render miễn phí, nếu máy chủ vừa được khởi động lại hoặc sau thời gian chờ, vui lòng bấm Dự đoán lại sau 3-5 giây).');
-                statusPill.className = 'px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-rose-950/60 text-rose-400 border border-rose-800';
-                statusPill.innerText = 'Lỗi';
+                if (lastErr) {
+                    showToast(`<b>Lỗi dự đoán:</b> ${lastErr.message}<br/><span class="text-[11px] text-slate-300/80 mt-1 block">💡 Gợi ý: Trên gói Render miễn phí, nếu máy chủ vừa được đánh thức sau chế độ ngủ đông, vui lòng bấm Dự đoán lại sau 3-5 giây.</span>`, 'error', 7000);
+                    statusPill.className = 'px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-rose-950/60 text-rose-400 border border-rose-800';
+                    statusPill.innerText = 'Lỗi';
+                }
+            } finally {
+                if (runBtn) {
+                    runBtn.disabled = false;
+                    runBtn.classList.remove('opacity-75', 'cursor-not-allowed');
+                }
+                btnText.innerText = 'Dự đoán thể loại âm nhạc';
+                spinner.classList.add('hidden');
+                btnIcon.classList.remove('hidden');
+                isPredicting = false;
             }
-
-            btnText.innerText = 'Dự đoán thể loại âm nhạc';
-            spinner.classList.add('hidden');
-            btnIcon.classList.remove('hidden');
         }
 
         // Render Prediction Result
