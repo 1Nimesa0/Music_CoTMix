@@ -6,9 +6,23 @@ Supports both lightweight AudioCNN (recommended for Render) and DinoV3 ViT backb
 """
 
 import os
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+
 import io
 import time
+import gc
 import torch
+torch.set_num_threads(1)
+if hasattr(torch, "set_num_interop_threads"):
+    try:
+        torch.set_num_interop_threads(1)
+    except RuntimeError:
+        pass
+
 import torch.nn.functional as F
 import numpy as np
 import soundfile as sf
@@ -135,7 +149,14 @@ class MusicGenrePredictor:
         if y.ndim > 1:
             y = np.mean(y, axis=1)
 
-        # Resample if needed
+        # Optimization: Slice to target duration BEFORE resampling to save 80% RAM & compute
+        target_dur = clip_len / target_sr  # 8.192s
+        slice_samples = int(target_dur * file_sr)
+        if len(y) > slice_samples:
+            start = (len(y) - slice_samples) // 2
+            y = y[start:start + slice_samples]
+
+        # Resample only the 8.2s slice
         if file_sr != target_sr:
             y = librosa.resample(y.astype(np.float32), orig_sr=file_sr, target_sr=target_sr)
 
@@ -144,8 +165,7 @@ class MusicGenrePredictor:
             pad_width = clip_len - len(y)
             y_seg = np.pad(y, (0, pad_width), mode='wrap')
         else:
-            start = (len(y) - clip_len) // 2
-            y_seg = y[start:start + clip_len]
+            y_seg = y[:clip_len]
 
         # 1. Mel-Spectrogram [128, 256]
         mel = librosa.feature.melspectrogram(
@@ -265,6 +285,9 @@ class MusicGenrePredictor:
 
         genre_display_name = predicted_genre.capitalize()
         genre_sublabel = genre_descriptions.get(genre_display_name, f"Nhạc {genre_display_name} • Nhãn dự đoán hàng đầu")
+
+        # Explicit garbage collection to keep RAM minimal on Render Free Tier
+        gc.collect()
 
         return {
             "status": status,

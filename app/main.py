@@ -935,7 +935,7 @@ def serve_ui():
             return new Blob([buffer], { type: 'audio/wav' });
         }
 
-        // Execute Prediction
+        // Execute Prediction with Automatic Cold-Start Recovery
         async function executePrediction() {
             if (!currentFileObj && !currentLoadedGenre) {
                 alert('Vui lòng chọn một tệp âm thanh, ghi âm qua mic hoặc chọn mẫu thử trước khi bấm dự đoán.');
@@ -953,45 +953,76 @@ def serve_ui():
             statusPill.className = 'px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-950/60 text-blue-400 border border-blue-700 animate-pulse';
             statusPill.innerText = 'Đang suy luận';
 
-            try {
-                let data = null;
-                if (currentFileObj) {
-                    const formData = new FormData();
-                    formData.append('file', currentFileObj);
-                    const res = await fetch('/predict', { method: 'POST', body: formData });
-                    if (!res.ok) {
-                        const errData = await res.json().catch(() => ({}));
-                        throw new Error(errData.detail || 'Máy chủ trả về mã lỗi ' + res.status);
+            const maxRetries = 2;
+            let lastErr = null;
+
+            for (let attempt = 0; attempt <= maxRetries; attempt++) {
+                try {
+                    let data = null;
+                    if (currentFileObj) {
+                        const formData = new FormData();
+                        formData.append('file', currentFileObj);
+                        const res = await fetch('/predict', { method: 'POST', body: formData });
+                        if (res.status === 502 || res.status === 503 || res.status === 504) {
+                            if (attempt < maxRetries) {
+                                btnText.innerText = `Đang khởi động máy chủ (${attempt + 1}/${maxRetries})...`;
+                                await new Promise(r => setTimeout(r, 2500));
+                                continue;
+                            }
+                        }
+                        if (!res.ok) {
+                            const errData = await res.json().catch(() => ({}));
+                            throw new Error(errData.detail || 'Máy chủ trả về mã lỗi ' + res.status);
+                        }
+                        data = await res.json();
+                    } else if (currentLoadedGenre) {
+                        const genreKey = currentLoadedGenre.toLowerCase();
+                        const res = await fetch('/sample-predict/' + genreKey, { method: 'POST' });
+                        if (res.status === 502 || res.status === 503 || res.status === 504) {
+                            if (attempt < maxRetries) {
+                                btnText.innerText = `Đang khởi động máy chủ (${attempt + 1}/${maxRetries})...`;
+                                await new Promise(r => setTimeout(r, 2500));
+                                continue;
+                            }
+                        }
+                        if (!res.ok) {
+                            const errData = await res.json().catch(() => ({}));
+                            throw new Error(errData.detail || 'Máy chủ trả về mã lỗi ' + res.status);
+                        }
+                        data = await res.json();
                     }
-                    data = await res.json();
-                } else if (currentLoadedGenre) {
-                    const genreKey = currentLoadedGenre.toLowerCase();
-                    const res = await fetch('/sample-predict/' + genreKey, { method: 'POST' });
-                    if (!res.ok) {
-                        const errData = await res.json().catch(() => ({}));
-                        throw new Error(errData.detail || 'Máy chủ trả về mã lỗi ' + res.status);
+
+                    if (!data || !data.predicted_genre) {
+                        throw new Error('Dữ liệu kết quả không hợp lệ.');
                     }
-                    data = await res.json();
+
+                    renderPredictionResult(data);
+                    addHistoryRecord(data);
+
+                    statusPill.className = 'px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-950/60 text-emerald-400 border border-emerald-800';
+                    statusPill.innerText = 'Phân tích xong';
+                    lastErr = null;
+                    break;
+                } catch (err) {
+                    lastErr = err;
+                    if (attempt < maxRetries && (err.message.includes('502') || err.message.includes('503') || err.message.includes('Failed to fetch'))) {
+                        btnText.innerText = `Đang kết nối lại (${attempt + 1}/${maxRetries})...`;
+                        await new Promise(r => setTimeout(r, 2500));
+                        continue;
+                    }
+                    break;
                 }
+            }
 
-                if (!data || !data.predicted_genre) {
-                    throw new Error('Dữ liệu kết quả không hợp lệ.');
-                }
-
-                renderPredictionResult(data);
-                addHistoryRecord(data);
-
-                statusPill.className = 'px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-950/60 text-emerald-400 border border-emerald-800';
-                statusPill.innerText = 'Phân tích xong';
-            } catch (err) {
-                alert('Lỗi dự đoán: ' + err.message);
+            if (lastErr) {
+                alert('Lỗi dự đoán: ' + lastErr.message + '\n\n(Lưu ý: Trên gói Render miễn phí, nếu máy chủ vừa được khởi động lại hoặc sau thời gian chờ, vui lòng bấm Dự đoán lại sau 3-5 giây).');
                 statusPill.className = 'px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-rose-950/60 text-rose-400 border border-rose-800';
                 statusPill.innerText = 'Lỗi';
-            } finally {
-                btnText.innerText = 'Dự đoán thể loại âm nhạc';
-                spinner.classList.add('hidden');
-                btnIcon.classList.remove('hidden');
             }
+
+            btnText.innerText = 'Dự đoán thể loại âm nhạc';
+            spinner.classList.add('hidden');
+            btnIcon.classList.remove('hidden');
         }
 
         // Render Prediction Result
