@@ -103,9 +103,19 @@ class MusicGenrePredictor:
 
         if isinstance(audio_data, (bytes, bytearray)):
             audio_io = io.BytesIO(audio_data)
-            y, file_sr = sf.read(audio_io)
+            try:
+                y, file_sr = sf.read(audio_io)
+            except Exception:
+                try:
+                    audio_io.seek(0)
+                    y, file_sr = librosa.load(audio_io, sr=None)
+                except Exception as ex:
+                    raise ValueError(f"Không thể giải mã tệp âm thanh: {str(ex)}")
         elif isinstance(audio_data, str) and os.path.exists(audio_data):
-            y, file_sr = sf.read(audio_data)
+            try:
+                y, file_sr = sf.read(audio_data)
+            except Exception:
+                y, file_sr = librosa.load(audio_data, sr=None)
         elif isinstance(audio_data, np.ndarray):
             y = audio_data
             file_sr = sr if sr is not None else target_sr

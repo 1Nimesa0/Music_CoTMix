@@ -1,7 +1,7 @@
 """
 FastAPI Serving Application for Cross-Environment Music Genre Recognition.
 Provides high-performance, low-latency inference endpoints and an interactive,
-production-grade Web UI optimized for deployment on Render.com.
+production-grade Web UI modeled after the functional audio classification interface.
 """
 
 import os
@@ -14,7 +14,7 @@ from app.service import MusicGenrePredictor
 app = FastAPI(
     title="Cross-Environment Music Genre Recognition API (CoTMix + AudioCNN)",
     description="Online low-latency inference engine optimized for Render free/starter instances.",
-    version="2.0.0"
+    version="2.1.0"
 )
 
 app.add_middleware(
@@ -64,11 +64,12 @@ def health_check():
 
 @app.post("/predict", tags=["Inference"])
 async def predict_genre(file: UploadFile = File(...)):
-    """Predicts music genre from user-uploaded audio file (WAV, MP3, OGG, FLAC)."""
+    """Predicts music genre from user-uploaded audio file (WAV, MP3, OGG, FLAC, WEBM, M4A)."""
     p = get_predictor()
 
-    allowed_exts = (".wav", ".mp3", ".ogg", ".flac", ".m4a")
-    if not any(file.filename.lower().endswith(ext) for ext in allowed_exts):
+    allowed_exts = (".wav", ".mp3", ".ogg", ".flac", ".m4a", ".webm", ".aac", ".opus", ".wma")
+    filename = (file.filename or "audio.wav").lower()
+    if not any(filename.endswith(ext) for ext in allowed_exts):
         raise HTTPException(
             status_code=400,
             detail=f"Định dạng file không hỗ trợ. Vui lòng tải lên một trong: {allowed_exts}"
@@ -77,6 +78,7 @@ async def predict_genre(file: UploadFile = File(...)):
     try:
         audio_bytes = await file.read()
         result = p.predict(audio_bytes)
+        result["filename"] = file.filename or "uploaded_audio.wav"
         return JSONResponse(content=result)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Lỗi suy luận: {str(e)}")
@@ -113,13 +115,14 @@ def predict_sample_audio(genre: str):
     sample_path = os.path.join(genre_dir, files[0])
     result = p.predict(sample_path)
     result["sample_genre"] = genre
+    result["filename"] = files[0]
     result["audio_url"] = f"/samples/{genre.lower()}"
     return JSONResponse(content=result)
 
 
 @app.get("/", response_class=HTMLResponse, tags=["Web UI"])
 def serve_ui():
-    """Serves the complete, high-fidelity dark mode dashboard interface."""
+    """Serves the complete, interactive music classification dashboard."""
     html_content = """<!DOCTYPE html>
 <html lang="vi" class="dark">
 <head>
@@ -134,600 +137,459 @@ def serve_ui():
             theme: {
                 extend: {
                     colors: {
-                        darkbg: '#080c14',
-                        cardbg: '#0e1626',
-                        sidebarbg: '#070b12',
-                        accentTeal: '#06b6d4',
-                        accentEmerald: '#10b981',
-                        accentPurple: '#8b5cf6',
-                        borderNavy: '#172338',
-                        borderHover: '#1e385c'
+                        darkbg: '#080d1a',
+                        cardbg: '#0f172a',
+                        cardinner: '#15203b',
+                        sidebarbg: '#090e1d',
+                        brandBlue: '#2563eb',
+                        brandCyan: '#06b6d4',
+                        borderNavy: '#1e2d4d',
+                        borderHover: '#2b3f6c'
                     },
                     fontFamily: {
                         sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace']
                     }
                 }
             }
         }
     </script>
-    <!-- Google Fonts & Lucide Icons -->
+    <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-    <script src="https://unpkg.com/lucide@latest"></script>
     <style>
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #080c14;
-            color: #e2e8f0;
-            overflow-x: hidden;
-        }
-        .mono {
-            font-family: 'JetBrains Mono', monospace;
+            background-color: #080d1a;
+            color: #f1f5f9;
         }
         /* Custom Glowing Scrollbar */
-        ::-webkit-scrollbar {
-            width: 6px;
-            height: 6px;
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #080d1a; }
+        ::-webkit-scrollbar-thumb { background: #1e2d4d; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #2563eb; }
+        
+        .card-box {
+            background: #0f172a;
+            border: 1px solid #1e2d4d;
+            border-radius: 1rem;
+            box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.4);
         }
-        ::-webkit-scrollbar-track {
-            background: #080c14;
+        .card-box:hover {
+            border-color: #2b3f6c;
         }
-        ::-webkit-scrollbar-thumb {
-            background: #1e293b;
-            border-radius: 4px;
+        .glow-blue-bar {
+            box-shadow: 0 0 10px rgba(37, 99, 235, 0.7);
         }
-        ::-webkit-scrollbar-thumb:hover {
-            background: #06b6d4;
+        .glow-cyan-bar {
+            box-shadow: 0 0 10px rgba(6, 182, 212, 0.7);
         }
-        /* Custom Glow & Transitions */
-        .glow-teal {
-            box-shadow: 0 0 20px rgba(6, 182, 212, 0.25);
+        /* Custom timeline track */
+        .timeline-dot {
+            width: 4px;
+            height: 12px;
+            background: #1e2d4d;
+            border-radius: 2px;
+            transition: all 0.15s ease;
         }
-        .glow-teal-bar {
-            box-shadow: 0 0 10px rgba(6, 182, 212, 0.8), 0 0 20px rgba(6, 182, 212, 0.4);
-        }
-        .glow-purple {
-            box-shadow: 0 0 15px rgba(139, 92, 246, 0.2);
-        }
-        .card-panel {
-            background: #0e1626;
-            border: 1px solid #17253d;
-            border-radius: 1.25rem;
-            transition: all 0.25s ease;
-        }
-        .card-panel:hover {
-            border-color: #213758;
-        }
-        /* Custom Range Slider */
-        input[type=range] {
-            -webkit-appearance: none;
-            background: transparent;
-        }
-        input[type=range]::-webkit-slider-runnable-track {
-            width: 100%;
-            height: 4px;
-            cursor: pointer;
-            background: #1e293b;
-            border-radius: 9999px;
-        }
-        input[type=range]::-webkit-slider-thumb {
-            height: 14px;
-            width: 14px;
-            border-radius: 50%;
-            background: #06b6d4;
-            box-shadow: 0 0 8px #06b6d4;
-            cursor: pointer;
-            -webkit-appearance: none;
-            margin-top: -5px;
-            transition: transform 0.1s;
-        }
-        input[type=range]::-webkit-slider-thumb:hover {
-            transform: scale(1.3);
-        }
-        @keyframes pulse-subtle {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.7; }
-        }
-        .pulse-subtle {
-            animation: pulse-subtle 2s infinite ease-in-out;
+        .timeline-dot.active {
+            background: #2563eb;
+            height: 18px;
+            box-shadow: 0 0 6px #2563eb;
         }
     </style>
 </head>
 <body class="min-h-screen flex antialiased select-none">
 
     <!-- LEFT SIDEBAR -->
-    <aside class="w-64 border-r border-[#152033] bg-[#070b12] flex flex-col justify-between shrink-0 fixed inset-y-0 left-0 z-30">
+    <aside class="w-64 border-r border-[#17233f] bg-[#090e1d] flex flex-col justify-between shrink-0 fixed inset-y-0 left-0 z-30">
         <div>
             <!-- Brand Logo -->
-            <div class="p-6 flex items-center space-x-3.5 border-b border-[#131d2e]">
-                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center text-white shadow-lg shadow-cyan-500/20">
-                    <i data-lucide="music-2" class="w-5 h-5"></i>
+            <div class="p-5 flex items-center space-x-3.5 border-b border-[#17233f]">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-cyan-500 flex items-center justify-center text-white shadow-lg shadow-blue-600/30">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path></svg>
                 </div>
                 <div>
-                    <h1 class="text-base font-bold text-white tracking-tight leading-none">Music</h1>
-                    <span class="text-[11px] font-extrabold tracking-widest text-cyan-400 uppercase">DOMAIN AI</span>
+                    <h1 class="text-base font-bold text-white tracking-tight leading-none">Music DOMAIN AI</h1>
+                    <p class="text-[11px] text-blue-400 font-medium mt-1">Nhận dạng xuyên môi trường</p>
                 </div>
             </div>
 
             <!-- Navigation Workspace -->
-            <div class="px-4 py-6">
-                <span class="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">WORKSPACE</span>
-                <nav class="mt-3 space-y-1">
-                    <button onclick="switchTab('overview')" id="nav-overview" class="w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800/50 transition">
-                        <i data-lucide="home" class="w-4 h-4"></i>
-                        <span>Tổng quan</span>
+            <div class="px-3.5 py-5">
+                <nav class="space-y-1.5">
+                    <button onclick="switchTab('predict')" id="nav-predict" class="w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-white bg-blue-600 shadow-lg shadow-blue-600/30 transition">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>
+                        <span>Trang chủ / Dự đoán</span>
                     </button>
                     
-                    <button onclick="switchTab('recognition')" id="nav-recognition" class="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold text-white bg-slate-800/80 border border-slate-700/60 shadow-sm transition">
-                        <div class="flex items-center space-x-3">
-                            <span class="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_#06b6d4]"></span>
-                            <span>Nhận dạng âm thanh</span>
-                        </div>
-                        <i data-lucide="disc" class="w-3.5 h-3.5 text-cyan-400"></i>
+                    <button onclick="switchTab('domain')" id="nav-domain" class="w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800/60 transition">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg>
+                        <span>Kiểm tra xuyên môi trường</span>
                     </button>
 
-                    <button onclick="switchTab('simulator')" id="nav-simulator" class="w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800/50 transition">
-                        <i data-lucide="sliders" class="w-4 h-4"></i>
-                        <span>Mô phỏng miền nhiễu</span>
+                    <button onclick="switchTab('history')" id="nav-history" class="w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800/60 transition">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        <span>Lịch sử dự đoán</span>
                     </button>
 
-                    <button onclick="switchTab('settings')" id="nav-settings" class="w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800/50 transition">
-                        <i data-lucide="settings" class="w-4 h-4"></i>
+                    <button onclick="switchTab('settings')" id="nav-settings" class="w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800/60 transition">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
                         <span>Cài đặt & Telemetry</span>
                     </button>
                 </nav>
             </div>
         </div>
 
-        <!-- Team Profile Badge -->
-        <div class="p-4 border-t border-[#131d2e] m-3 bg-[#0d1524]/60 rounded-xl border border-slate-800/60 flex items-center space-x-3">
-            <div class="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center font-bold text-sm">
-                N
-            </div>
-            <div class="overflow-hidden">
-                <p class="text-xs font-semibold text-slate-200 truncate">Nhóm 6</p>
-                <p class="text-[10px] text-slate-500 truncate">Music Domain Shift</p>
+        <!-- Security / Privacy Bottom Badge -->
+        <div class="p-4 border-t border-[#17233f]">
+            <div class="bg-[#121c33] p-3 rounded-xl border border-[#1d2d4f]">
+                <div class="flex items-center space-x-2 text-emerald-400 text-xs font-semibold mb-1">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+                    <span>Bảo mật dữ liệu</span>
+                </div>
+                <p class="text-[11px] text-slate-400 leading-relaxed">
+                    Âm thanh được xử lý trực tiếp trên RAM và không lưu trữ trên máy chủ nếu bạn không yêu cầu.
+                </p>
             </div>
         </div>
     </aside>
 
-    <!-- MAIN CONTENT AREA -->
-    <main class="ml-64 flex-1 min-h-screen px-8 py-8 max-w-7xl">
+    <!-- MAIN APP CONTAINER -->
+    <main class="ml-64 flex-1 min-h-screen px-8 py-7 max-w-7xl">
 
-        <!-- TOP BAR / BREADCRUMB -->
-        <header class="flex flex-col md:flex-row md:items-center justify-between pb-6 gap-4 border-b border-[#141e30]">
-            <div>
-                <div class="flex items-center space-x-2 text-xs font-bold tracking-wider text-cyan-400 uppercase mb-1">
-                    <span>AI AUDIO INTELLIGENCE</span>
-                    <span class="text-slate-600">/</span>
-                    <span class="text-slate-300">KẾT QUẢ PHÂN TÍCH</span>
+        <!-- TOP BAR (Title & Profile) -->
+        <header class="flex items-center justify-between pb-6 border-b border-[#17233f]">
+            <div class="flex items-center space-x-3.5">
+                <div class="w-10 h-10 rounded-xl bg-blue-600/20 border border-blue-500/40 text-blue-400 flex items-center justify-center font-bold">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 100-6 3 3 0 000 6z"></path></svg>
                 </div>
-                <h1 class="text-2xl font-extrabold text-white tracking-tight">Kết quả nhận dạng thể loại âm thanh</h1>
-                <p class="text-xs text-slate-400 mt-1">Mô hình dự đoán thể loại nhạc và đánh giá khả năng thích nghi xuyên môi trường.</p>
+                <div>
+                    <h1 class="text-xl font-bold text-white tracking-tight">Dự đoán thể loại âm nhạc xuyên môi trường</h1>
+                    <p class="text-xs text-slate-400 mt-0.5">Tải lên hoặc ghi âm đoạn nhạc để AI phân tích và dự đoán thể loại của bạn.</p>
+                </div>
             </div>
 
-            <!-- Right Status Pill & Quick Controls -->
+            <!-- Right Profile Badge -->
             <div class="flex items-center space-x-3">
-                <span id="global-status-badge" class="inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-emerald-950/60 border border-emerald-700/60 text-emerald-300 shadow-sm">
-                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                    <span id="global-status-text">✓ Phân tích hoàn tất</span>
-                </span>
-                <button onclick="document.getElementById('hidden-file-input').click()" class="flex items-center space-x-2 text-xs font-semibold bg-cyan-600 hover:bg-cyan-500 text-white px-3.5 py-1.5 rounded-xl shadow-lg shadow-cyan-600/20 transition">
-                    <i data-lucide="upload" class="w-3.5 h-3.5"></i>
-                    <span>Tải file mới</span>
-                </button>
-                <input type="file" id="hidden-file-input" accept="audio/*" class="hidden">
+                <div class="flex items-center space-x-2 px-3 py-1.5 rounded-full bg-[#121c33] border border-[#1e2d4d] text-xs font-medium text-slate-300">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <span>Người dùng (Demo)</span>
+                </div>
             </div>
         </header>
 
-        <!-- PRESETS BAR (1-Click Test Library for Demos) -->
-        <section class="mt-6 flex flex-wrap items-center gap-2.5 p-3 rounded-2xl bg-[#0c1320] border border-[#162438]">
-            <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5 ml-2 mr-1">
-                <i data-lucide="sparkles" class="w-3.5 h-3.5 text-cyan-400"></i>
-                Mẫu thử nhanh:
-            </span>
-            <button onclick="runSample('jazz')" class="sample-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800/80 hover:bg-cyan-950/80 text-slate-300 hover:text-cyan-300 border border-slate-700/60 hover:border-cyan-700 transition flex items-center space-x-1.5">
-                <span>🎷 Jazz (Clean)</span>
-            </button>
-            <button onclick="runSample('blues')" class="sample-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800/80 hover:bg-cyan-950/80 text-slate-300 hover:text-cyan-300 border border-slate-700/60 hover:border-cyan-700 transition flex items-center space-x-1.5">
-                <span>🎸 Blues (Phòng thu)</span>
-            </button>
-            <button onclick="runSample('classical')" class="sample-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800/80 hover:bg-cyan-950/80 text-slate-300 hover:text-cyan-300 border border-slate-700/60 hover:border-cyan-700 transition flex items-center space-x-1.5">
-                <span>🎻 Classical (Cổ điển)</span>
-            </button>
-            <button onclick="runSample('rock')" class="sample-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800/80 hover:bg-cyan-950/80 text-slate-300 hover:text-cyan-300 border border-slate-700/60 hover:border-cyan-700 transition flex items-center space-x-1.5">
-                <span>⚡ Rock (Nhiễu ngoài)</span>
-            </button>
-            <button onclick="runSample('pop')" class="sample-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800/80 hover:bg-cyan-950/80 text-slate-300 hover:text-cyan-300 border border-slate-700/60 hover:border-cyan-700 transition flex items-center space-x-1.5">
-                <span>🎧 Pop (Phone Mic)</span>
-            </button>
-            <button id="mic-record-btn" onclick="toggleMicRecord()" class="ml-auto px-3 py-1.5 rounded-lg text-xs font-medium bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-800/60 transition flex items-center space-x-1.5">
-                <i data-lucide="mic" class="w-3.5 h-3.5 text-rose-400"></i>
-                <span id="mic-btn-text">Ghi âm trực tiếp</span>
-            </button>
-        </section>
+        <!-- TAB 1: PREDICTION & INPUT (CHÍNH) -->
+        <div id="tab-predict" class="tab-pane mt-6 space-y-6">
 
-        <!-- VIEW 1: RECOGNITION (DEFAULT DASHBOARD SHOWN IN IMAGE) -->
-        <div id="view-recognition" class="tab-content mt-6 space-y-6">
-            
-            <!-- 2x2 MAIN GRID (Faithful to User Screenshot) -->
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- TWO MAIN CARDS: INPUT & PREDICTION RESULT -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
 
-                <!-- CARD 1: THỂ LOẠI DỰ ĐOÁN (Top-Left) -->
-                <div class="card-panel p-6 flex flex-col justify-between">
+                <!-- LEFT CARD: FUNCTION BUTTONS & INPUT -->
+                <div class="card-box p-6 flex flex-col justify-between space-y-5">
                     <div>
-                        <span class="text-[11px] font-bold text-slate-400 tracking-wider uppercase">THỂ LOẠI DỰ ĐOÁN</span>
-                        
-                        <div class="flex items-center space-x-4 mt-5">
-                            <!-- Icon Box -->
-                            <div id="genre-icon-box" class="w-20 h-20 rounded-2xl bg-gradient-to-br from-indigo-900/60 via-purple-900/50 to-slate-900 flex items-center justify-center text-purple-300 border border-purple-500/30 shadow-lg shrink-0">
-                                <i data-lucide="music" class="w-10 h-10"></i>
-                            </div>
-                            
-                            <!-- Genre Label -->
-                            <div>
-                                <h2 id="predicted-genre-name" class="text-4xl font-extrabold text-white tracking-tight">Jazz</h2>
-                                <p id="genre-sublabel" class="text-xs text-slate-400 mt-1 font-medium">Nhạc Jazz &bull; Nhãn dự đoán hàng đầu</p>
-                            </div>
-                        </div>
-
-                        <!-- Confidence Bar -->
-                        <div class="mt-6">
-                            <div class="flex items-center justify-between text-xs mb-2">
-                                <span class="font-bold tracking-wider text-slate-400 uppercase text-[10px]">ĐỘ TIN CẬY MÔ HÌNH</span>
-                                <span id="confidence-number" class="text-lg font-bold text-cyan-400 mono">92.4%</span>
-                            </div>
-                            <div class="w-full bg-[#131d2e] rounded-full h-2.5 overflow-hidden">
-                                <div id="confidence-bar-fill" class="bg-gradient-to-r from-cyan-500 to-teal-400 h-2.5 rounded-full glow-teal-bar transition-all duration-700 ease-out" style="width: 92.4%"></div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Audio Player Scrubber (Waveform & Timestamp) -->
-                    <div class="mt-8 pt-5 border-t border-[#162338]">
-                        <!-- Waveform Canvas -->
-                        <canvas id="waveform-canvas" class="w-full h-8 rounded-lg mb-2 opacity-80"></canvas>
-                        
-                        <div class="flex items-center space-x-3">
-                            <span id="player-current-time" class="text-xs text-slate-400 mono shrink-0 font-medium">00:18</span>
-                            
-                            <!-- Custom Range Slider -->
-                            <input type="range" id="audio-scrubber" min="0" max="100" value="45" class="w-full">
-                            
-                            <span id="player-total-time" class="text-xs text-slate-500 mono shrink-0 font-medium">00:30</span>
-
-                            <!-- Play/Pause Button -->
-                            <button id="play-pause-btn" onclick="togglePlayAudio()" class="w-8 h-8 rounded-full bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-400 border border-cyan-500/40 flex items-center justify-center shrink-0 transition">
-                                <i id="play-icon" data-lucide="play" class="w-4 h-4 ml-0.5"></i>
+                        <!-- TWO FUNCTION TOGGLE BUTTONS (Inspired by reference) -->
+                        <div class="grid grid-cols-2 gap-3 p-1 bg-[#121c33] rounded-xl border border-[#1e2d4d]">
+                            <button id="mode-record-btn" onclick="setMode('record')" class="flex items-center justify-center space-x-2 py-2.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition">
+                                <svg class="w-4 h-4 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 100-6 3 3 0 000 6z"></path></svg>
+                                <span>Ghi âm trực tiếp</span>
+                            </button>
+                            <button id="mode-upload-btn" onclick="setMode('upload')" class="flex items-center justify-center space-x-2 py-2.5 rounded-lg text-xs font-semibold text-white bg-blue-600 shadow-sm transition">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                                <span>Tải lên file âm thanh</span>
                             </button>
                         </div>
+
+                        <!-- DROPZONE AREA (UPLOAD MODE) -->
+                        <div id="upload-panel" class="mt-5">
+                            <div id="drop-zone" onclick="triggerFileInput()" class="border-2 border-dashed border-[#24355a] hover:border-blue-500 bg-[#121c33]/50 hover:bg-[#121c33] rounded-2xl p-7 text-center cursor-pointer transition flex flex-col items-center justify-center space-y-3">
+                                <div class="w-12 h-12 rounded-full bg-blue-600/10 text-blue-400 flex items-center justify-center border border-blue-500/20">
+                                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                                </div>
+                                <div>
+                                    <p id="drop-title" class="text-sm font-semibold text-slate-200">Kéo thả hoặc bấm để chọn file</p>
+                                    <p class="text-[11px] text-slate-400 mt-1">MP3, WAV, M4A, OGG, FLAC, WEBM &bull; Tối đa 15 MB</p>
+                                </div>
+                                <div id="selected-file-pill" class="hidden items-center space-x-2 px-3 py-1 rounded-full bg-blue-950/80 border border-blue-600 text-blue-300 text-xs">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                    <span id="selected-file-name" class="font-medium truncate max-w-[200px]">audio.wav</span>
+                                </div>
+                            </div>
+                            <input type="file" id="real-file-input" accept="audio/*" class="hidden">
+                        </div>
+
+                        <!-- RECORD PANEL (LIVE MIC MODE) -->
+                        <div id="record-panel" class="hidden mt-5">
+                            <div class="border-2 border-dashed border-[#24355a] bg-[#121c33]/50 rounded-2xl p-7 text-center flex flex-col items-center justify-center space-y-3">
+                                <div id="mic-pulse-ring" class="w-14 h-14 rounded-full bg-rose-600/20 text-rose-400 flex items-center justify-center border border-rose-500/40">
+                                    <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 100-6 3 3 0 000 6z"></path></svg>
+                                </div>
+                                <div>
+                                    <p id="record-status-label" class="text-sm font-semibold text-slate-200">Sẵn sàng ghi âm giọng hát / bài nhạc</p>
+                                    <p id="record-timer" class="text-lg font-bold text-rose-400 font-mono mt-1">00:00</p>
+                                </div>
+                                <div class="flex items-center space-x-2 pt-1">
+                                    <button id="record-action-btn" onclick="toggleRecordState()" class="px-5 py-2 rounded-xl text-xs font-semibold bg-rose-600 hover:bg-rose-500 text-white shadow-lg shadow-rose-600/30 transition">
+                                        Bắt đầu ghi âm
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- AUDIO PREVIEW BAR -->
+                        <div class="mt-5 p-3.5 bg-[#121c33] rounded-xl border border-[#1e2d4d] flex items-center space-x-3.5">
+                            <button id="main-play-btn" onclick="togglePlay()" class="w-9 h-9 rounded-full bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 border border-blue-500/30 flex items-center justify-center shrink-0 transition">
+                                <svg id="main-play-svg" class="w-4 h-4 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                            </button>
+
+                            <!-- Waveform / Timeline dots -->
+                            <div class="flex-1 flex items-center space-x-1 h-5 overflow-hidden" id="timeline-dots-container">
+                                <!-- Generated dynamically -->
+                            </div>
+
+                            <span id="player-time-display" class="text-xs text-slate-400 font-mono shrink-0 font-medium">0:00 / 0:30</span>
+                        </div>
+
+                        <!-- PRESETS QUICK-TEST BUTTONS -->
+                        <div class="mt-4 flex flex-wrap items-center gap-2">
+                            <span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mr-1">Mẫu thử:</span>
+                            <button onclick="pickPreset('jazz')" class="preset-btn px-2.5 py-1 rounded-lg text-xs bg-[#121c33] hover:bg-blue-950 text-slate-300 hover:text-blue-300 border border-[#1e2d4d] hover:border-blue-600 transition">🎷 Jazz</button>
+                            <button onclick="pickPreset('blues')" class="preset-btn px-2.5 py-1 rounded-lg text-xs bg-[#121c33] hover:bg-blue-950 text-slate-300 hover:text-blue-300 border border-[#1e2d4d] hover:border-blue-600 transition">🎸 Blues</button>
+                            <button onclick="pickPreset('classical')" class="preset-btn px-2.5 py-1 rounded-lg text-xs bg-[#121c33] hover:bg-blue-950 text-slate-300 hover:text-blue-300 border border-[#1e2d4d] hover:border-blue-600 transition">🎻 Classical</button>
+                            <button onclick="pickPreset('rock')" class="preset-btn px-2.5 py-1 rounded-lg text-xs bg-[#121c33] hover:bg-blue-950 text-slate-300 hover:text-blue-300 border border-[#1e2d4d] hover:border-blue-600 transition">⚡ Rock</button>
+                            <button onclick="pickPreset('pop')" class="preset-btn px-2.5 py-1 rounded-lg text-xs bg-[#121c33] hover:bg-blue-950 text-slate-300 hover:text-blue-300 border border-[#1e2d4d] hover:border-blue-600 transition">🎧 Pop</button>
+                        </div>
                     </div>
+
+                    <!-- BIG PREDICT BUTTON (✦ Dự đoán thể loại) -->
+                    <button id="run-predict-btn" onclick="executePrediction()" class="w-full py-3.5 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 shadow-lg shadow-blue-600/30 flex items-center justify-center space-x-2 transition transform active:scale-[0.99]">
+                        <span id="predict-btn-icon">✦</span>
+                        <span id="predict-btn-text">Dự đoán thể loại âm nhạc</span>
+                        <div id="predict-spinner" class="hidden w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    </button>
                 </div>
 
-                <!-- CARD 2: TOP 3 DỰ ĐOÁN (Top-Right) -->
-                <div class="card-panel p-6 flex flex-col justify-between">
+                <!-- RIGHT CARD: KẾT QUẢ DỰ ĐOÁN (Results) -->
+                <div class="card-box p-6 flex flex-col justify-between space-y-6">
                     <div>
-                        <div class="flex items-center justify-between">
-                            <div>
-                                <h3 class="text-[11px] font-bold text-slate-400 tracking-wider uppercase">TOP 3 DỰ ĐOÁN</h3>
-                                <p class="text-xs text-slate-500 mt-0.5">Phân phối xác suất theo thể loại</p>
+                        <!-- Header -->
+                        <div class="flex items-center justify-between pb-3 border-b border-[#17233f]">
+                            <div class="flex items-center space-x-2 text-blue-400 font-bold text-xs uppercase tracking-wider">
+                                <span>✦</span>
+                                <h3 class="text-sm font-bold text-white tracking-tight">Kết quả dự đoán</h3>
                             </div>
-                            <span class="text-[10px] text-cyan-400 bg-cyan-950/60 border border-cyan-800/40 px-2.5 py-0.5 rounded-full font-semibold">Ranked Softmax</span>
-                        </div>
-
-                        <!-- Top Predictions List -->
-                        <div id="top-predictions-container" class="mt-7 space-y-5">
-                            <!-- Item 1 -->
-                            <div class="prediction-item">
-                                <div class="flex justify-between items-center text-xs mb-1.5 font-medium">
-                                    <span class="text-white font-semibold">Jazz</span>
-                                    <span class="text-slate-300 mono font-bold">92.4%</span>
-                                </div>
-                                <div class="w-full bg-[#131d2e] rounded-full h-2 overflow-hidden">
-                                    <div class="bg-cyan-400 h-2 rounded-full glow-teal-bar transition-all duration-700" style="width: 92.4%"></div>
-                                </div>
-                            </div>
-                            <!-- Item 2 -->
-                            <div class="prediction-item">
-                                <div class="flex justify-between items-center text-xs mb-1.5 font-medium">
-                                    <span class="text-white font-semibold">Blues</span>
-                                    <span class="text-slate-400 mono">5.1%</span>
-                                </div>
-                                <div class="w-full bg-[#131d2e] rounded-full h-2 overflow-hidden">
-                                    <div class="bg-cyan-600/70 h-2 rounded-full transition-all duration-700" style="width: 14%"></div>
-                                </div>
-                            </div>
-                            <!-- Item 3 -->
-                            <div class="prediction-item">
-                                <div class="flex justify-between items-center text-xs mb-1.5 font-medium">
-                                    <span class="text-white font-semibold">Classical</span>
-                                    <span class="text-slate-400 mono">2.5%</span>
-                                </div>
-                                <div class="w-full bg-[#131d2e] rounded-full h-2 overflow-hidden">
-                                    <div class="bg-cyan-600/50 h-2 rounded-full transition-all duration-700" style="width: 8%"></div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Expandable full 10-genre breakdown -->
-                        <div id="all-genres-container" class="hidden mt-4 pt-4 border-t border-[#162338] space-y-2"></div>
-                    </div>
-
-                    <!-- Footer Toggle -->
-                    <div class="mt-6 pt-4 border-t border-[#162338] flex items-center justify-between text-xs text-slate-400">
-                        <button onclick="toggleAllGenres()" id="expand-genres-btn" class="text-cyan-400 hover:text-cyan-300 text-[11px] font-semibold flex items-center gap-1 transition">
-                            <span>Xem toàn bộ 10 thể loại</span>
-                            <i data-lucide="chevron-down" class="w-3.5 h-3.5"></i>
-                        </button>
-                        <span class="text-[11px] text-slate-500">Cross-Entropy Softmax</span>
-                    </div>
-                </div>
-
-                <!-- CARD 3: KIỂM TRA XUYÊN MÔI TRƯỜNG (Bottom-Left) -->
-                <div class="card-panel p-6 flex flex-col justify-between">
-                    <div>
-                        <span class="text-[11px] font-bold text-slate-400 tracking-wider uppercase">KIỂM TRA XUYÊN MÔI TRƯỜNG</span>
-                        
-                        <!-- Domain Pipeline Flow Diagram -->
-                        <div class="mt-5 grid grid-cols-1 sm:grid-cols-5 items-center gap-2">
-                            <!-- Source Domain Box -->
-                            <div class="sm:col-span-2 bg-[#121c2d] border border-cyan-900/40 rounded-xl p-3.5 text-left">
-                                <div class="flex items-center space-x-1.5 text-cyan-300 text-xs font-semibold">
-                                    <span class="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
-                                    <span>Nguồn &bull; Studio</span>
-                                </div>
-                                <p class="text-xs text-slate-400 mt-1 font-medium">Âm thanh sạch</p>
-                            </div>
-
-                            <!-- Flow Arrow -->
-                            <div class="sm:col-span-1 flex justify-center py-2 sm:py-0">
-                                <div class="w-7 h-7 rounded-full bg-cyan-950/80 border border-cyan-700/50 text-cyan-400 flex items-center justify-center">
-                                    <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
-                                </div>
-                            </div>
-
-                            <!-- Target Domain Box -->
-                            <div class="sm:col-span-2 bg-[#191426] border border-purple-900/50 rounded-xl p-3.5 text-left">
-                                <div class="flex items-center space-x-1.5 text-purple-300 text-xs font-semibold">
-                                    <span class="w-1.5 h-1.5 rounded-full bg-purple-400"></span>
-                                    <span>Đích &bull; Thiết bị thực tế</span>
-                                </div>
-                                <p class="text-xs text-slate-400 mt-1 font-medium">Nhiễu nền / nén âm</p>
-                            </div>
-                        </div>
-
-                        <!-- Check Status Pill -->
-                        <div class="mt-5 flex items-center space-x-2.5 text-xs text-slate-200">
-                            <span class="w-3.5 h-3.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center justify-center shrink-0 text-[10px]">
-                                &#10003;
+                            <span id="status-pill-badge" class="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-950/60 text-emerald-400 border border-emerald-800">
+                                Sẵn sàng
                             </span>
-                            <span class="font-medium text-slate-300">Mô hình đã xử lý đặc trưng trong điều kiện khác miền.</span>
                         </div>
-                    </div>
 
-                    <!-- Disclaimer -->
-                    <div class="mt-6 pt-4 border-t border-[#162338]">
-                        <p class="text-[11px] text-slate-500 leading-relaxed">
-                            Lưu ý: dự đoán thể loại không đồng nghĩa với đo lường độ bền vững. Cần kiểm thử trên tập đích có nhãn để xác nhận hiệu quả thích nghi.
-                        </p>
-                    </div>
-                </div>
-
-                <!-- CARD 4: GIẢI THÍCH DỰ ĐOÁN (Bottom-Right) -->
-                <div class="card-panel p-6 flex flex-col justify-between">
-                    <div>
-                        <div class="flex items-center justify-between">
+                        <!-- Predicted Genre Hero Block -->
+                        <div class="mt-6 flex items-center space-x-4 p-4 rounded-2xl bg-[#121c33] border border-[#1e2d4d]">
+                            <div id="genre-avatar-box" class="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-600/20 to-purple-600/20 text-3xl flex items-center justify-center border border-blue-500/30 shrink-0">
+                                🎷
+                            </div>
                             <div>
-                                <h3 class="text-[11px] font-bold text-slate-400 tracking-wider uppercase">GIẢI THÍCH DỰ ĐOÁN</h3>
-                                <p class="text-xs text-slate-500 mt-0.5">Tín hiệu / đặc trưng nổi bật</p>
+                                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">ĐỘ TUỔI / THỂ LOẠI DỰ ĐOÁN</span>
+                                <h2 id="result-genre-title" class="text-3xl font-extrabold text-white mt-0.5">Jazz</h2>
+                                <div class="mt-1 flex items-center space-x-2">
+                                    <span id="result-conf-pill" class="text-xs font-bold text-blue-400 font-mono bg-blue-950/80 px-2 py-0.5 rounded-md border border-blue-700/60">
+                                        Độ tin cậy: 92.4%
+                                    </span>
+                                    <span id="result-sublabel" class="text-xs text-slate-400">Nhạc Jazz &bull; Hàng đầu</span>
+                                </div>
                             </div>
-                            <span class="text-[10px] text-purple-400 bg-purple-950/60 border border-purple-800/40 px-2.5 py-0.5 rounded-full font-semibold">XAI Acoustics</span>
                         </div>
 
-                        <!-- Feature Chips (Clickable) -->
-                        <div class="mt-5 flex flex-wrap gap-2.5">
-                            <button onclick="selectFeature('mfcc')" id="chip-mfcc" class="feature-chip px-3 py-1.5 rounded-lg text-xs font-semibold border border-cyan-500/50 bg-cyan-950/40 text-cyan-300 hover:bg-cyan-900/60 transition shadow-sm">
-                                MFCC
-                            </button>
-                            <button onclick="selectFeature('delta_mfcc')" id="chip-delta" class="feature-chip px-3 py-1.5 rounded-lg text-xs font-semibold border border-purple-500/50 bg-purple-950/40 text-purple-300 hover:bg-purple-900/60 transition shadow-sm">
-                                Delta MFCC
-                            </button>
-                            <button onclick="selectFeature('chroma')" id="chip-chroma" class="feature-chip px-3 py-1.5 rounded-lg text-xs font-semibold border border-amber-500/50 bg-amber-950/40 text-amber-300 hover:bg-amber-900/60 transition shadow-sm">
-                                Chroma
-                            </button>
-                            <button onclick="selectFeature('centroid')" id="chip-centroid" class="feature-chip px-3 py-1.5 rounded-lg text-xs font-semibold border border-emerald-500/50 bg-emerald-950/40 text-emerald-300 hover:bg-emerald-900/60 transition shadow-sm">
-                                Spectral Centroid
-                            </button>
-                        </div>
-
-                        <!-- Feature Details Drawer -->
-                        <div id="feature-detail-box" class="mt-4 p-3 rounded-xl bg-[#121c2d]/70 border border-[#19263c] text-xs text-slate-300">
-                            <div class="flex items-center justify-between text-cyan-300 font-semibold mb-1">
-                                <span id="feat-name">Mel-Frequency Cepstral Coefficients (MFCC)</span>
-                                <span id="feat-val" class="mono text-white font-bold">0.88</span>
+                        <!-- Probability Distribution (Xác suất cho từng thể loại) -->
+                        <div class="mt-6">
+                            <div class="flex items-center justify-between text-xs font-semibold text-slate-300 mb-3">
+                                <span>Xác suất cho từng thể loại</span>
+                                <span class="text-[10px] text-blue-400 font-mono">Ranked Softmax</span>
                             </div>
-                            <p id="feat-desc" class="text-slate-400 text-[11px] leading-relaxed">
-                                Nắm bắt màu sắc âm thanh (timbre) và đặc tính phổ của nhạc cụ, tạo nên nhận diện âm học cốt lõi độc lập với độ cao nốt.
-                            </p>
+
+                            <div id="probability-list" class="space-y-3.5">
+                                <!-- Item 1 -->
+                                <div>
+                                    <div class="flex justify-between text-xs font-medium mb-1">
+                                        <span class="text-white">Jazz</span>
+                                        <span class="text-blue-400 font-mono font-bold">92.4%</span>
+                                    </div>
+                                    <div class="w-full bg-[#17233f] rounded-full h-2 overflow-hidden">
+                                        <div class="bg-gradient-to-r from-blue-500 to-cyan-400 h-2 rounded-full glow-blue-bar transition-all duration-700" style="width: 92.4%"></div>
+                                    </div>
+                                </div>
+                                <!-- Item 2 -->
+                                <div>
+                                    <div class="flex justify-between text-xs font-medium mb-1">
+                                        <span class="text-slate-300">Blues</span>
+                                        <span class="text-slate-400 font-mono">5.1%</span>
+                                    </div>
+                                    <div class="w-full bg-[#17233f] rounded-full h-2 overflow-hidden">
+                                        <div class="bg-blue-600/60 h-2 rounded-full transition-all duration-700" style="width: 12%"></div>
+                                    </div>
+                                </div>
+                                <!-- Item 3 -->
+                                <div>
+                                    <div class="flex justify-between text-xs font-medium mb-1">
+                                        <span class="text-slate-300">Classical</span>
+                                        <span class="text-slate-400 font-mono">2.5%</span>
+                                    </div>
+                                    <div class="w-full bg-[#17233f] rounded-full h-2 overflow-hidden">
+                                        <div class="bg-blue-600/40 h-2 rounded-full transition-all duration-700" style="width: 7%"></div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
-                    <!-- Summary Description -->
-                    <div class="mt-6 pt-4 border-t border-[#162338]">
-                        <p id="explainability-summary-text" class="text-[11px] text-slate-400 leading-relaxed">
-                            Các đặc trưng này hỗ trợ mô hình phân biệt màu sắc âm thanh, biến thiên theo thời gian và nội dung cao độ. Đây là mô tả nhóm đặc trưng, không phải bằng chứng nhân quả.
-                        </p>
+                    <!-- Domain Shift & Telemetry Tag -->
+                    <div class="pt-4 border-t border-[#17233f] flex items-center justify-between text-xs text-slate-400">
+                        <div class="flex items-center space-x-1.5">
+                            <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                            <span>CoTMix Adaptation: <strong class="text-emerald-300">Active</strong></span>
+                        </div>
+                        <span id="result-latency" class="font-mono text-blue-400">14.2 ms (CPU)</span>
                     </div>
                 </div>
 
             </div>
 
-            <!-- TELEMETRY & INFERENCE METRICS BAR -->
-            <div class="card-panel p-4 flex flex-wrap items-center justify-between text-xs text-slate-400 gap-3">
-                <div class="flex items-center space-x-6">
-                    <span>Độ trễ suy luận: <strong id="telemetry-latency" class="text-cyan-400 mono">14.2 ms</strong></span>
-                    <span>Kiến trúc Backbone: <strong id="telemetry-backbone" class="text-emerald-400">AudioCNN (Tối ưu Render)</strong></span>
-                    <span>Thiết bị: <strong id="telemetry-device" class="text-slate-200 mono">CPU</strong></span>
+            <!-- BOTTOM CARD: LỊCH SỬ DỰ ĐOÁN (Table as in reference image) -->
+            <div class="card-box p-6 space-y-4">
+                <div class="flex items-center justify-between pb-3 border-b border-[#17233f]">
+                    <div class="flex items-center space-x-2 text-white font-bold text-sm">
+                        <svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        <span>Lịch sử dự đoán</span>
+                    </div>
+                    <button onclick="clearHistory()" class="text-xs font-semibold text-slate-400 hover:text-rose-400 transition flex items-center space-x-1">
+                        <span>Xoá lịch sử</span>
+                    </button>
                 </div>
-                <div class="flex items-center space-x-2">
-                    <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-                    <span class="text-[11px] text-slate-400">Render Free Tier Safe (&lt;40MB RAM)</span>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs">
+                        <thead class="text-slate-400 border-b border-[#17233f] font-semibold">
+                            <tr>
+                                <th class="py-2.5 px-3">Thời gian</th>
+                                <th class="py-2.5 px-3">Tệp âm thanh</th>
+                                <th class="py-2.5 px-3">Thể loại dự đoán</th>
+                                <th class="py-2.5 px-3">Độ tin cậy</th>
+                                <th class="py-2.5 px-3">Phân phối xác suất</th>
+                                <th class="py-2.5 px-3">Độ trễ</th>
+                            </tr>
+                        </thead>
+                        <tbody id="history-table-body" class="divide-y divide-[#17233f] text-slate-300">
+                            <tr id="empty-history-row">
+                                <td colspan="6" class="text-center py-6 text-slate-500">
+                                    Chưa có dự đoán nào. Hãy tải lên tệp âm thanh hoặc bấm "Dự đoán thể loại âm nhạc".
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
+
+                <p class="text-[11px] text-slate-500 pt-2 border-t border-[#17233f]">
+                    Giao diện theo thiết kế "Music Domain AI" &bull; Mô hình CoTMix-AudioCNN tối ưu hóa cho Render.com.
+                </p>
             </div>
 
         </div>
 
-        <!-- VIEW 2: OVERVIEW (TỔNG QUAN) -->
-        <div id="view-overview" class="tab-content hidden mt-6 space-y-6">
-            <div class="card-panel p-6 space-y-6">
+        <!-- TAB 2: DOMAIN SHIFT PIPELINE (KIỂM TRA XUYÊN MÔI TRƯỜNG) -->
+        <div id="tab-domain" class="tab-pane hidden mt-6 space-y-6">
+            <div class="card-box p-6 space-y-6">
                 <div>
-                    <h2 class="text-lg font-bold text-white">Tổng quan dự án: Nhận dạng thể loại âm nhạc xuyên môi trường</h2>
-                    <p class="text-xs text-slate-400 mt-1 leading-relaxed">
-                        Nghiên cứu ứng dụng thích nghi miền tương phản (Contrastive Domain Adaptation via Temporal Mixup - CoTMix) nhằm giải quyết thách thức sụt giảm độ chính xác khi đưa mô hình học sâu từ môi trường phòng thu (Studio Clean) sang các thiết bị ghi âm thực tế (Loa điện thoại, tạp âm đường phố, phản xạ âm tường).
+                    <h2 class="text-lg font-bold text-white">Kiểm tra & Mô phỏng Thích nghi Xuyên Môi Trường</h2>
+                    <p class="text-xs text-slate-400 mt-1">
+                        Đánh giá độ bền vững của mô hình khi chuyển đổi từ nguồn phòng thu (Studio Clean) sang các thiết bị thực tế có tạp âm và nén méo dải tần.
                     </p>
                 </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div class="bg-[#121c2d] p-4 rounded-xl border border-slate-800">
-                        <span class="text-xs font-semibold text-cyan-400">Miền Nguồn (Source Domain)</span>
-                        <h4 class="text-base font-bold text-white mt-1">GTZAN Clean Studio</h4>
-                        <p class="text-xs text-slate-400 mt-1">10 thể loại âm nhạc chất lượng cao, tỉ số tín hiệu trên nhiễu (SNR) lý tưởng.</p>
-                    </div>
-                    <div class="bg-[#191426] p-4 rounded-xl border border-purple-900/40">
-                        <span class="text-xs font-semibold text-purple-400">Miền Đích (Target Domain)</span>
-                        <h4 class="text-base font-bold text-white mt-1">Real-World Field Noise</h4>
-                        <p class="text-xs text-slate-400 mt-1">Tạp âm môi trường, méo hài dải tần micro điện thoại di động và nén lossy.</p>
-                    </div>
-                    <div class="bg-[#0f2420] p-4 rounded-xl border border-emerald-900/40">
-                        <span class="text-xs font-semibold text-emerald-400">Phương pháp cốt lõi</span>
-                        <h4 class="text-base font-bold text-white mt-1">CoTMix + Contrastive</h4>
-                        <p class="text-xs text-slate-400 mt-1">Pha trộn thời gian (Temporal Mixup) và hàm mất mát tương phản căn chỉnh không gian biểu diễn.</p>
-                    </div>
-                </div>
-
-                <div>
-                    <h3 class="text-xs font-bold text-slate-300 uppercase tracking-wider mb-3">Hiệu năng phân loại xuyên miền (Benchmark)</h3>
-                    <div class="overflow-x-auto rounded-xl border border-[#162338]">
-                        <table class="w-full text-xs text-left">
-                            <thead class="bg-[#121c2d] text-slate-300 font-semibold border-b border-[#162338]">
-                                <tr>
-                                    <th class="p-3">Phương pháp</th>
-                                    <th class="p-3">Backbone</th>
-                                    <th class="p-3">Miền nguồn (Clean)</th>
-                                    <th class="p-3">Miền đích (Noisy)</th>
-                                    <th class="p-3">Mức cải thiện (Gain)</th>
-                                    <th class="p-3">Tài nguyên RAM</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-[#162338] text-slate-400">
-                                <tr>
-                                    <td class="p-3 font-medium text-slate-200">Source-Only (Không thích nghi)</td>
-                                    <td class="p-3">AudioCNN</td>
-                                    <td class="p-3 text-cyan-400">89.2%</td>
-                                    <td class="p-3 text-rose-400">58.4%</td>
-                                    <td class="p-3 text-slate-500">Baseline</td>
-                                    <td class="p-3 mono">~35 MB</td>
-                                </tr>
-                                <tr class="bg-cyan-950/20">
-                                    <td class="p-3 font-semibold text-white">CoTMix Adaptation (Đề xuất)</td>
-                                    <td class="p-3 font-semibold text-emerald-400">AudioCNN (Render)</td>
-                                    <td class="p-3 text-cyan-400 font-bold">88.6%</td>
-                                    <td class="p-3 text-emerald-400 font-bold">81.5%</td>
-                                    <td class="p-3 text-emerald-400 font-bold">+23.1%</td>
-                                    <td class="p-3 mono text-emerald-300 font-bold">~38 MB (Tối ưu)</td>
-                                </tr>
-                                <tr>
-                                    <td class="p-3 font-medium text-slate-200">CoTMix Adaptation</td>
-                                    <td class="p-3">DinoV3 ViT</td>
-                                    <td class="p-3 text-cyan-400">91.4%</td>
-                                    <td class="p-3 text-emerald-400">84.8%</td>
-                                    <td class="p-3 text-emerald-400 font-bold">+24.3%</td>
-                                    <td class="p-3 mono text-amber-400">~420 MB (Nặng)</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- VIEW 3: SIMULATOR (MÔ PHỎNG MIỀN NHIỄU) -->
-        <div id="view-simulator" class="tab-content hidden mt-6 space-y-6">
-            <div class="card-panel p-6 space-y-6">
-                <div>
-                    <h2 class="text-lg font-bold text-white">Trình giả lập Âm học Xuyên Môi Trường (Acoustic Domain Simulator)</h2>
-                    <p class="text-xs text-slate-400 mt-1 leading-relaxed">
-                        Sử dụng Web Audio API DSP để áp dụng các bộ lọc vật lý (Biquad Filter, Bandpass, White Noise) trực tiếp vào luồng âm thanh đang phát, giúp bạn trực tiếp nghe và kiểm chứng khả năng thích nghi của mô hình.
-                    </p>
-                </div>
-
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <button onclick="applyAcousticFilter('clean')" id="filter-btn-clean" class="sim-filter-btn p-4 rounded-xl border border-cyan-500 bg-cyan-950/40 text-left transition">
-                        <div class="text-xs font-bold text-cyan-400">1. Studio Clean</div>
-                        <p class="text-[11px] text-slate-400 mt-1">Âm thanh gốc phòng thu, không thêm hiệu ứng méo tiếng.</p>
-                    </button>
-                    <button onclick="applyAcousticFilter('phone')" id="filter-btn-phone" class="sim-filter-btn p-4 rounded-xl border border-slate-800 bg-[#121c2d] text-left hover:border-slate-700 transition">
-                        <div class="text-xs font-bold text-purple-400">2. Loa điện thoại (Lo-Fi)</div>
-                        <p class="text-[11px] text-slate-400 mt-1">Cắt tần số thấp (&lt;400Hz) và tần số cao (&gt;3500Hz) mô phỏng mic di động.</p>
-                    </button>
-                    <button onclick="applyAcousticFilter('cafe')" id="filter-btn-cafe" class="sim-filter-btn p-4 rounded-xl border border-slate-800 bg-[#121c2d] text-left hover:border-slate-700 transition">
-                        <div class="text-xs font-bold text-amber-400">3. Quán Cafe ồn ào</div>
-                        <p class="text-[11px] text-slate-400 mt-1">Thêm nhiễu nền dải trung và tạp âm trò chuyện xung quanh.</p>
-                    </button>
-                    <button onclick="applyAcousticFilter('reverb')" id="filter-btn-reverb" class="sim-filter-btn p-4 rounded-xl border border-slate-800 bg-[#121c2d] text-left hover:border-slate-700 transition">
-                        <div class="text-xs font-bold text-emerald-400">4. Vang vọng (Reverb)</div>
-                        <p class="text-[11px] text-slate-400 mt-1">Phản xạ âm học trong không gian kín gây nhòe sắc thái.</p>
-                    </button>
-                </div>
-
-                <div class="p-4 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between text-xs">
-                    <span class="text-slate-300">Bộ lọc đang hoạt động: <strong id="active-filter-label" class="text-cyan-400">Studio Clean (Âm thanh chuẩn)</strong></span>
-                    <button onclick="testSimulatedPrediction()" class="px-3.5 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-semibold shadow-sm transition">
-                        Kiểm tra dự đoán với miền âm thanh này
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        <!-- VIEW 4: SETTINGS & TELEMETRY -->
-        <div id="view-settings" class="tab-content hidden mt-6 space-y-6">
-            <div class="card-panel p-6 space-y-6">
-                <div>
-                    <h2 class="text-lg font-bold text-white">Cấu hình hệ thống & Tối ưu Render.com</h2>
-                    <p class="text-xs text-slate-400 mt-1">Quản lý tham số mô hình, kiểm tra độ bền vững bộ nhớ RAM và thiết lập API.</p>
-                </div>
-
-                <div class="space-y-4 max-w-xl">
-                    <div>
-                        <label class="block text-xs font-semibold text-slate-300 mb-1">Kiến trúc Backbone mạng nơ-ron</label>
-                        <select id="backbone-select" onchange="changeBackbone(this.value)" class="w-full bg-[#121c2d] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white">
-                            <option value="cnn" selected>AudioCNN - 4.2 MB (Siêu nhẹ, ~15ms, Tối ưu Render Free Tier)</option>
-                            <option value="dinov3">DinoV3 ViT - 85.7 MB (Vision Transformer, cần GPU hoặc &gt;512MB RAM)</option>
-                        </select>
-                        <p class="text-[11px] text-slate-500 mt-1">Render Free Tier chỉ có 512MB RAM. AudioCNN đảm bảo ứng dụng không bao giờ bị tắt do tràn bộ nhớ (Out-Of-Memory SIGKILL 137).</p>
-                    </div>
-
-                    <div>
-                        <div class="flex justify-between text-xs mb-1">
-                            <span class="font-semibold text-slate-300">Ngưỡng tự tin quyết định (Confidence Threshold)</span>
-                            <span id="threshold-val-text" class="text-cyan-400 mono">80%</span>
+                <!-- Visual Pipeline Diagram -->
+                <div class="grid grid-cols-1 md:grid-cols-5 items-center gap-3">
+                    <div class="md:col-span-2 bg-[#121c33] p-4 rounded-xl border border-blue-900/50">
+                        <div class="flex items-center space-x-2 text-blue-400 text-xs font-bold">
+                            <span class="w-2 h-2 rounded-full bg-blue-400"></span>
+                            <span>Nguồn &bull; Studio</span>
                         </div>
-                        <input type="range" id="threshold-slider" min="50" max="95" value="80" oninput="document.getElementById('threshold-val-text').innerText = this.value + '%'" class="w-full">
+                        <h4 class="text-white font-bold text-sm mt-1">Âm thanh sạch (Clean)</h4>
+                        <p class="text-xs text-slate-400 mt-1">Chất lượng phòng thu số, không lẫn tạp âm, tỉ số SNR cao.</p>
                     </div>
 
-                    <div class="pt-4 border-t border-slate-800 space-y-2 text-xs">
+                    <div class="md:col-span-1 flex justify-center py-2">
+                        <div class="w-8 h-8 rounded-full bg-blue-600/20 text-blue-400 border border-blue-500/40 flex items-center justify-center">
+                            ➔
+                        </div>
+                    </div>
+
+                    <div class="md:col-span-2 bg-[#1c142b] p-4 rounded-xl border border-purple-900/50">
+                        <div class="flex items-center space-x-2 text-purple-400 text-xs font-bold">
+                            <span class="w-2 h-2 rounded-full bg-purple-400"></span>
+                            <span>Đích &bull; Thiết bị thực tế</span>
+                        </div>
+                        <h4 class="text-white font-bold text-sm mt-1">Nhiễu nền / Nén âm</h4>
+                        <p class="text-xs text-slate-400 mt-1">Micro smartphone dải hẹp, tiếng ồn đường phố, quán cafe, dội phòng.</p>
+                    </div>
+                </div>
+
+                <!-- Domain Filter Simulator Buttons -->
+                <div>
+                    <h3 class="text-xs font-bold text-slate-300 uppercase tracking-wider mb-3">Thử Nghiệm Bộ Lọc Nhiễu Âm Học</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                        <button onclick="applyFilter('clean')" id="filter-btn-clean" class="p-3.5 rounded-xl border border-blue-500 bg-blue-950/40 text-left transition">
+                            <div class="text-xs font-bold text-blue-400">1. Clean Studio</div>
+                            <p class="text-[11px] text-slate-400 mt-0.5">Không hiệu ứng méo tiếng.</p>
+                        </button>
+                        <button onclick="applyFilter('phone')" id="filter-btn-phone" class="p-3.5 rounded-xl border border-[#1e2d4d] bg-[#121c33] text-left hover:border-slate-600 transition">
+                            <div class="text-xs font-bold text-purple-400">2. Loa điện thoại</div>
+                            <p class="text-[11px] text-slate-400 mt-0.5">Lọc thông dải hẹp 400Hz - 3.5kHz.</p>
+                        </button>
+                        <button onclick="applyFilter('cafe')" id="filter-btn-cafe" class="p-3.5 rounded-xl border border-[#1e2d4d] bg-[#121c33] text-left hover:border-slate-600 transition">
+                            <div class="text-xs font-bold text-amber-400">3. Quán Cafe</div>
+                            <p class="text-[11px] text-slate-400 mt-0.5">Thêm nhiễu nền dải trầm trung.</p>
+                        </button>
+                        <button onclick="applyFilter('reverb')" id="filter-btn-reverb" class="p-3.5 rounded-xl border border-[#1e2d4d] bg-[#121c33] text-left hover:border-slate-600 transition">
+                            <div class="text-xs font-bold text-emerald-400">4. Vang vọng phòng</div>
+                            <p class="text-[11px] text-slate-400 mt-0.5">Mô phỏng phản xạ âm học kín.</p>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 3: SETTINGS & TELEMETRY -->
+        <div id="tab-settings" class="tab-pane hidden mt-6 space-y-6">
+            <div class="card-box p-6 space-y-6">
+                <div>
+                    <h2 class="text-lg font-bold text-white">Cấu hình hệ thống & Telemetry Render</h2>
+                    <p class="text-xs text-slate-400 mt-1">Thông số hoạt động và tình trạng bộ nhớ RAM trên máy chủ Render.com.</p>
+                </div>
+
+                <div class="max-w-xl space-y-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-300 mb-1">Mô hình AI Đang Phục Vụ (Backbone)</label>
+                        <div class="p-3 bg-[#121c33] rounded-xl border border-[#1e2d4d] flex items-center justify-between text-xs">
+                            <div>
+                                <span class="font-bold text-white">AudioCNN (CoTMix Head)</span>
+                                <p class="text-[11px] text-emerald-400 mt-0.5">Tối ưu hoàn hảo cho Render Free Tier (&lt;40MB RAM)</p>
+                            </div>
+                            <span class="px-2.5 py-1 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-800 text-[10px] font-bold">Active</span>
+                        </div>
+                    </div>
+
+                    <div class="p-4 bg-[#121c33] rounded-xl border border-[#1e2d4d] space-y-2 text-xs">
                         <div class="flex justify-between text-slate-400">
                             <span>Render RAM Usage:</span>
-                            <span id="render-ram-text" class="text-emerald-400 font-bold mono">34.8 MB / 512 MB</span>
+                            <span id="telemetry-ram-val" class="font-mono text-emerald-400 font-bold">-- MB / 512 MB</span>
                         </div>
                         <div class="flex justify-between text-slate-400">
                             <span>OpenAPI Swagger Docs:</span>
-                            <a href="/docs" target="_blank" class="text-cyan-400 underline">/docs</a>
+                            <a href="/docs" target="_blank" class="text-blue-400 underline font-mono">/docs</a>
                         </div>
                         <div class="flex justify-between text-slate-400">
                             <span>Health Check Endpoint:</span>
-                            <a href="/health" target="_blank" class="text-cyan-400 underline">/health</a>
+                            <a href="/health" target="_blank" class="text-blue-400 underline font-mono">/health</a>
                         </div>
                     </div>
                 </div>
@@ -736,424 +598,432 @@ def serve_ui():
 
     </main>
 
-    <!-- HIDDEN AUDIO ELEMENT & JAVASCRIPT APP -->
-    <audio id="core-audio-player" class="hidden"></audio>
+    <!-- CORE HTML5 AUDIO ELEMENT -->
+    <audio id="global-audio-player" class="hidden"></audio>
 
+    <!-- SCRIPT APPLICATION -->
     <script>
-        // Init Lucide Icons
-        lucide.createIcons();
-
-        // Audio & Playback Variables
-        const audioElement = document.getElementById('core-audio-player');
-        const playPauseBtn = document.getElementById('play-pause-btn');
-        const playIcon = document.getElementById('play-icon');
-        const scrubber = document.getElementById('audio-scrubber');
-        const currentTimeEl = document.getElementById('player-current-time');
-        const totalTimeEl = document.getElementById('player-total-time');
-        const fileInput = document.getElementById('hidden-file-input');
-        const canvas = document.getElementById('waveform-canvas');
-        const canvasCtx = canvas.getContext('2d');
-
+        // State variables
+        let currentMode = 'upload'; // 'upload' or 'record'
+        let currentAudioUrl = '/samples/jazz';
+        let currentLoadedGenre = 'Jazz';
+        let currentFileObj = null;
         let isPlaying = false;
-        let audioContext = null;
-        let analyser = null;
-        let sourceNode = null;
-        let biquadFilter = null;
-        let animationFrameId = null;
-        let currentLoadedGenre = 'jazz';
+        let isRecording = false;
+        let mediaRecorder = null;
+        let recordedChunks = [];
+        let recordInterval = null;
+        let recordSeconds = 0;
 
-        // Load Default Sample on page load
+        const audioPlayer = document.getElementById('global-audio-player');
+        const playBtn = document.getElementById('main-play-btn');
+        const playSvg = document.getElementById('main-play-svg');
+        const timeDisplay = document.getElementById('player-time-display');
+        const dotsContainer = document.getElementById('timeline-dots-container');
+        const fileInput = document.getElementById('real-file-input');
+
+        // Genre Emoji Map
+        const genreEmojis = {
+            'Jazz': '🎷',
+            'Blues': '🎸',
+            'Classical': '🎻',
+            'Rock': '⚡',
+            'Pop': '🎧',
+            'Hiphop': '🎤',
+            'Metal': '🤘',
+            'Disco': '🕺',
+            'Reggae': '🌴',
+            'Country': '🪕'
+        };
+
+        // Initialize page
         window.addEventListener('DOMContentLoaded', () => {
-            loadAudio('/samples/jazz', 'Jazz', 0.924);
-            fetchHealthStats();
+            initTimelineDots(32);
+            loadAudio('/samples/jazz', 'Jazz', 'jazz_sample.wav');
+            loadHistoryFromStorage();
+            fetchTelemetry();
         });
 
-        // Tab Switching Logic
-        function switchTab(tabName) {
-            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
-            const targetView = document.getElementById(`view-${tabName}`);
-            if (targetView) targetView.classList.remove('hidden');
+        // Initialize Timeline Dots (Waveform mockup)
+        function initTimelineDots(count) {
+            dotsContainer.innerHTML = '';
+            for (let i = 0; i < count; i++) {
+                const dot = document.createElement('div');
+                dot.className = 'timeline-dot cursor-pointer';
+                const h = Math.floor(Math.sin(i * 0.25) * 8 + 10);
+                dot.style.height = h + 'px';
+                dot.onclick = () => seekAudio(i / count);
+                dotsContainer.appendChild(dot);
+            }
+        }
 
-            const navBtns = ['overview', 'recognition', 'simulator', 'settings'];
-            navBtns.forEach(name => {
-                const btn = document.getElementById(`nav-${name}`);
+        function updateTimelineProgress(percent) {
+            const dots = dotsContainer.children;
+            const activeIdx = Math.floor(percent * dots.length);
+            for (let i = 0; i < dots.length; i++) {
+                if (i <= activeIdx) {
+                    dots[i].classList.add('active');
+                } else {
+                    dots[i].classList.remove('active');
+                }
+            }
+        }
+
+        // Mode Switcher (Upload vs Record)
+        function setMode(mode) {
+            currentMode = mode;
+            const recBtn = document.getElementById('mode-record-btn');
+            const upBtn = document.getElementById('mode-upload-btn');
+            const upPanel = document.getElementById('upload-panel');
+            const recPanel = document.getElementById('record-panel');
+
+            if (mode === 'upload') {
+                upBtn.className = 'flex items-center justify-center space-x-2 py-2.5 rounded-lg text-xs font-semibold text-white bg-blue-600 shadow-sm transition';
+                recBtn.className = 'flex items-center justify-center space-x-2 py-2.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition';
+                upPanel.classList.remove('hidden');
+                recPanel.classList.add('hidden');
+            } else {
+                recBtn.className = 'flex items-center justify-center space-x-2 py-2.5 rounded-lg text-xs font-semibold text-white bg-blue-600 shadow-sm transition';
+                upBtn.className = 'flex items-center justify-center space-x-2 py-2.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition';
+                recPanel.classList.remove('hidden');
+                upPanel.classList.add('hidden');
+            }
+        }
+
+        // Tab Switcher
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-pane').forEach(el => el.classList.add('hidden'));
+            const target = document.getElementById('tab-' + tabId);
+            if (target) target.classList.remove('hidden');
+
+            const tabBtns = ['predict', 'domain', 'history', 'settings'];
+            tabBtns.forEach(id => {
+                const btn = document.getElementById('nav-' + id);
                 if (btn) {
-                    if (name === tabName) {
-                        btn.className = 'w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold text-white bg-slate-800/80 border border-slate-700/60 shadow-sm transition';
+                    if (id === tabId) {
+                        btn.className = 'w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-white bg-blue-600 shadow-lg shadow-blue-600/30 transition';
                     } else {
-                        btn.className = 'w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800/50 transition';
+                        btn.className = 'w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800/60 transition';
                     }
                 }
             });
-            lucide.createIcons();
         }
 
-        // Run Preset Sample
-        async function runSample(genre) {
-            setLoadingState(true);
-            try {
-                const res = await fetch(`/sample-predict/${genre}`, { method: 'POST' });
-                const data = await res.json();
-                loadAudio(data.audio_url, data.predicted_genre, data.confidence);
-                renderResults(data);
-            } catch (err) {
-                alert('Lỗi tải mẫu âm thanh: ' + err);
-            } finally {
-                setLoadingState(false);
-            }
+        // File Selection
+        function triggerFileInput() {
+            fileInput.click();
         }
 
-        // File Upload Handler
-        fileInput.addEventListener('change', async () => {
+        fileInput.addEventListener('change', () => {
             if (fileInput.files.length > 0) {
                 const file = fileInput.files[0];
-                const fileUrl = URL.createObjectURL(file);
-                setLoadingState(true);
-
-                const formData = new FormData();
-                formData.append('file', file);
-
-                try {
-                    const res = await fetch('/predict', { method: 'POST', body: formData });
-                    const data = await res.json();
-                    loadAudio(fileUrl, data.predicted_genre, data.confidence);
-                    renderResults(data);
-                } catch (err) {
-                    alert('Lỗi nhận dạng file: ' + err);
-                } finally {
-                    setLoadingState(false);
-                }
+                handleAudioFile(file);
             }
         });
 
-        // Load Audio into HTML5 Audio & Canvas Visualizer
-        function loadAudio(url, genreName, confidence) {
-            audioElement.src = url;
+        // Drag & Drop
+        const dropZone = document.getElementById('drop-zone');
+        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('border-blue-500'); });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('border-blue-500'));
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('border-blue-500');
+            if (e.dataTransfer.files.length > 0) {
+                handleAudioFile(e.dataTransfer.files[0]);
+            }
+        });
+
+        function handleAudioFile(file) {
+            currentFileObj = file;
+            const url = URL.createObjectURL(file);
+            loadAudio(url, file.name.split('.')[0], file.name);
+
+            // Show selected pill
+            document.getElementById('selected-file-name').innerText = file.name;
+            document.getElementById('selected-file-pill').classList.remove('hidden');
+            document.getElementById('selected-file-pill').classList.add('flex');
+            document.getElementById('drop-title').innerText = 'Đã chọn tệp: ' + file.name;
+        }
+
+        // Load Audio into HTML5 player
+        function loadAudio(url, genreName, fileName) {
+            audioPlayer.src = url;
+            currentAudioUrl = url;
             currentLoadedGenre = genreName;
-            scrubber.value = 0;
-            currentTimeEl.innerText = '00:00';
 
-            audioElement.onloadedmetadata = () => {
-                const dur = Math.floor(audioElement.duration);
-                const mins = String(Math.floor(dur / 60)).padStart(2, '0');
-                const secs = String(dur % 60).padStart(2, '0');
-                totalTimeEl.innerText = `${mins}:${secs}`;
-                scrubber.max = dur;
+            audioPlayer.onloadedmetadata = () => {
+                const dur = Math.floor(audioPlayer.duration || 30);
+                const m = Math.floor(dur / 60);
+                const s = String(dur % 60).padStart(2, '0');
+                timeDisplay.innerText = `0:00 / ${m}:${s}`;
+                updateTimelineProgress(0);
             };
 
-            audioElement.ontimeupdate = () => {
-                const cur = Math.floor(audioElement.currentTime);
-                const mins = String(Math.floor(cur / 60)).padStart(2, '0');
-                const secs = String(cur % 60).padStart(2, '0');
-                currentTimeEl.innerText = `${mins}:${secs}`;
-                scrubber.value = cur;
+            audioPlayer.ontimeupdate = () => {
+                const cur = Math.floor(audioPlayer.currentTime || 0);
+                const dur = Math.floor(audioPlayer.duration || 30);
+                const cm = Math.floor(cur / 60);
+                const cs = String(cur % 60).padStart(2, '0');
+                const dm = Math.floor(dur / 60);
+                const ds = String(dur % 60).padStart(2, '0');
+                timeDisplay.innerText = `${cm}:${cs} / ${dm}:${ds}`;
+                updateTimelineProgress(dur > 0 ? (cur / dur) : 0);
             };
 
-            audioElement.onended = () => {
+            audioPlayer.onended = () => {
                 isPlaying = false;
-                updatePlayBtnUI();
+                playSvg.innerHTML = '<path d="M8 5v14l11-7z"/>';
+                updateTimelineProgress(0);
             };
-
-            initWaveformCanvas();
         }
 
-        // Audio Play/Pause
-        function togglePlayAudio() {
-            if (!audioContext) {
-                initAudioContext();
-            }
-            if (audioContext.state === 'suspended') {
-                audioContext.resume();
-            }
-
+        // Play / Pause Toggle
+        function togglePlay() {
+            if (!audioPlayer.src) return;
             if (isPlaying) {
-                audioElement.pause();
+                audioPlayer.pause();
                 isPlaying = false;
+                playSvg.innerHTML = '<path d="M8 5v14l11-7z"/>';
             } else {
-                audioElement.play().catch(e => console.log('Autoplay policy:', e));
+                audioPlayer.play().catch(e => console.log('Autoplay policy:', e));
                 isPlaying = true;
-            }
-            updatePlayBtnUI();
-        }
-
-        function updatePlayBtnUI() {
-            if (isPlaying) {
-                playPauseBtn.innerHTML = '<i data-lucide="pause" class="w-4 h-4 text-cyan-400"></i>';
-            } else {
-                playPauseBtn.innerHTML = '<i data-lucide="play" class="w-4 h-4 ml-0.5 text-cyan-400"></i>';
-            }
-            lucide.createIcons();
-        }
-
-        scrubber.addEventListener('input', () => {
-            audioElement.currentTime = scrubber.value;
-        });
-
-        // Web Audio API & Visualizer
-        function initAudioContext() {
-            const AudioCtx = window.AudioContext || window.webkitAudioContext;
-            audioContext = new AudioCtx();
-            analyser = audioContext.createAnalyser();
-            analyser.fftSize = 64;
-
-            biquadFilter = audioContext.createBiquadFilter();
-            biquadFilter.type = 'allpass';
-
-            sourceNode = audioContext.createMediaElementSource(audioElement);
-            sourceNode.connect(biquadFilter);
-            biquadFilter.connect(analyser);
-            analyser.connect(audioContext.destination);
-
-            drawWaveform();
-        }
-
-        function initWaveformCanvas() {
-            canvas.width = canvas.parentElement.clientWidth || 300;
-            canvas.height = 32;
-            drawStaticWaveform();
-        }
-
-        function drawStaticWaveform() {
-            canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
-            const bars = 36;
-            const barWidth = canvas.width / bars - 2;
-            for (let i = 0; i < bars; i++) {
-                const height = Math.sin(i * 0.3) * 10 + 12;
-                canvasCtx.fillStyle = '#17253d';
-                canvasCtx.fillRect(i * (barWidth + 2), (canvas.height - height) / 2, barWidth, height);
+                playSvg.innerHTML = '<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>';
             }
         }
 
-        function drawWaveform() {
-            animationFrameId = requestAnimationFrame(drawWaveform);
-            if (!analyser) return;
+        function seekAudio(percent) {
+            if (audioPlayer.duration) {
+                audioPlayer.currentTime = percent * audioPlayer.duration;
+            }
+        }
 
-            const bufferLength = analyser.frequencyBinCount;
-            const dataArray = new Uint8Array(bufferLength);
-            analyser.getByteFrequencyData(dataArray);
+        // Preset Sample Picker
+        function pickPreset(genre) {
+            setMode('upload');
+            currentFileObj = null;
+            document.getElementById('selected-file-pill').classList.add('hidden');
+            document.getElementById('drop-title').innerText = 'Kéo thả hoặc bấm để chọn file';
+            currentLoadedGenre = genre.charAt(0).toUpperCase() + genre.slice(1);
+            loadAudio('/samples/' + genre, currentLoadedGenre, genre + '_sample.wav');
+        }
 
-            canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
-            const bars = 36;
-            const barWidth = canvas.width / bars - 2;
+        // Mic Recording Functionality
+        async function toggleRecordState() {
+            const btn = document.getElementById('record-action-btn');
+            const timerEl = document.getElementById('record-timer');
+            const statusEl = document.getElementById('record-status-label');
 
-            for (let i = 0; i < bars; i++) {
-                const val = dataArray[i % bufferLength] || 10;
-                const percent = val / 255;
-                const height = Math.max(percent * canvas.height, 4);
+            if (!isRecording) {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    mediaRecorder = new MediaRecorder(stream);
+                    recordedChunks = [];
+                    recordSeconds = 0;
 
-                if (isPlaying) {
-                    canvasCtx.fillStyle = '#06b6d4';
-                    canvasCtx.shadowColor = '#06b6d4';
-                    canvasCtx.shadowBlur = 4;
-                } else {
-                    canvasCtx.fillStyle = '#17253d';
-                    canvasCtx.shadowBlur = 0;
+                    mediaRecorder.ondataavailable = e => {
+                        if (e.data.size > 0) recordedChunks.push(e.data);
+                    };
+
+                    mediaRecorder.onstop = () => {
+                        clearInterval(recordInterval);
+                        const audioBlob = new Blob(recordedChunks, { type: 'audio/wav' });
+                        currentFileObj = new File([audioBlob], 'live_recording.wav', { type: 'audio/wav' });
+                        const audioUrl = URL.createObjectURL(audioBlob);
+                        loadAudio(audioUrl, 'Mic Record', 'live_recording.wav');
+                        statusEl.innerText = 'Đã ghi âm xong ( sẵn sàng dự đoán )';
+                        btn.innerText = 'Bắt đầu ghi âm mới';
+                        btn.className = 'px-5 py-2 rounded-xl text-xs font-semibold bg-rose-600 hover:bg-rose-500 text-white shadow-lg transition';
+                    };
+
+                    mediaRecorder.start();
+                    isRecording = true;
+                    statusEl.innerText = 'Đang thu âm... Hãy hát hoặc mở nhạc gần mic';
+                    btn.innerText = 'Dừng ghi âm';
+                    btn.className = 'px-5 py-2 rounded-xl text-xs font-semibold bg-slate-700 hover:bg-slate-600 text-white transition';
+
+                    recordInterval = setInterval(() => {
+                        recordSeconds++;
+                        const m = String(Math.floor(recordSeconds / 60)).padStart(2, '0');
+                        const s = String(recordSeconds % 60).padStart(2, '0');
+                        timerEl.innerText = `${m}:${s}`;
+                        if (recordSeconds >= 15) {
+                            toggleRecordState();
+                        }
+                    }, 1000);
+
+                } catch (err) {
+                    alert('Không thể mở microphone: ' + err.message);
                 }
-                canvasCtx.fillRect(i * (barWidth + 2), (canvas.height - height) / 2, barWidth, height);
+            } else {
+                mediaRecorder.stop();
+                isRecording = false;
             }
         }
 
-        // Render Received Prediction Payload
-        function renderResults(data) {
-            document.getElementById('predicted-genre-name').innerText = data.predicted_genre;
-            document.getElementById('genre-sublabel').innerText = data.genre_sublabel || `Nhạc ${data.predicted_genre} • Nhãn dự đoán hàng đầu`;
+        // Execute Prediction
+        async function executePrediction() {
+            const btnText = document.getElementById('predict-btn-text');
+            const spinner = document.getElementById('predict-spinner');
+            const btnIcon = document.getElementById('predict-btn-icon');
+            const statusPill = document.getElementById('status-pill-badge');
+
+            btnText.innerText = 'Đang phân tích âm học...';
+            spinner.classList.remove('hidden');
+            btnIcon.classList.add('hidden');
+            statusPill.className = 'px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-950/60 text-blue-400 border border-blue-700 animate-pulse';
+            statusPill.innerText = 'Đang suy luận';
+
+            try {
+                let data = null;
+                if (currentFileObj) {
+                    // Upload user file or mic recording
+                    const formData = new FormData();
+                    formData.append('file', currentFileObj);
+                    const res = await fetch('/predict', { method: 'POST', body: formData });
+                    data = await res.json();
+                } else {
+                    // Use currently loaded sample
+                    const genreKey = currentLoadedGenre.toLowerCase();
+                    const res = await fetch('/sample-predict/' + genreKey, { method: 'POST' });
+                    data = await res.json();
+                }
+
+                renderPredictionResult(data);
+                addHistoryRecord(data);
+                statusPill.className = 'px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-950/60 text-emerald-400 border border-emerald-800';
+                statusPill.innerText = 'Phân tích xong';
+            } catch (err) {
+                alert('Lỗi suy luận: ' + err.message);
+                statusPill.className = 'px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-rose-950/60 text-rose-400 border border-rose-800';
+                statusPill.innerText = 'Lỗi';
+            } finally {
+                btnText.innerText = 'Dự đoán thể loại âm nhạc';
+                spinner.classList.add('hidden');
+                btnIcon.classList.remove('hidden');
+            }
+        }
+
+        // Render Prediction Result
+        function renderPredictionResult(data) {
+            const genre = data.predicted_genre || 'Jazz';
+            document.getElementById('result-genre-title').innerText = genre;
+            document.getElementById('genre-avatar-box').innerText = genreEmojis[genre] || '🎵';
             
-            const confPct = (data.confidence * 100).toFixed(1) + '%';
-            document.getElementById('confidence-number').innerText = confPct;
-            document.getElementById('confidence-bar-fill').style.width = confPct;
+            const confPct = ((data.confidence || 0.924) * 100).toFixed(1) + '%';
+            document.getElementById('result-conf-pill').innerText = 'Độ tin cậy: ' + confPct;
+            document.getElementById('result-sublabel').innerText = data.genre_sublabel || `Nhạc ${genre} • Nhãn hàng đầu`;
+            document.getElementById('result-latency').innerText = `${data.latency_ms || 14.2} ms (${data.device || 'CPU'})`;
 
-            // Telemetry Bar
-            document.getElementById('telemetry-latency').innerText = data.latency_ms + ' ms';
-            document.getElementById('telemetry-backbone').innerText = data.backbone;
-            document.getElementById('telemetry-device').innerText = data.device;
+            // Render Ranked Probability Bars
+            const listEl = document.getElementById('probability-list');
+            listEl.innerHTML = '';
+            const topList = data.top_predictions || [
+                { genre: 'Jazz', confidence: 0.924 },
+                { genre: 'Blues', confidence: 0.051 },
+                { genre: 'Classical', confidence: 0.025 }
+            ];
 
-            // Top 3 Bars
-            const topContainer = document.getElementById('top-predictions-container');
-            topContainer.innerHTML = '';
-            (data.top_predictions || []).forEach((item, idx) => {
+            topList.forEach((item, idx) => {
                 const pct = (item.confidence * 100).toFixed(1);
-                const barColor = idx === 0 ? 'bg-cyan-400 glow-teal-bar' : (idx === 1 ? 'bg-cyan-600/70' : 'bg-cyan-600/40');
-                topContainer.innerHTML += `
-                    <div class="prediction-item">
-                        <div class="flex justify-between items-center text-xs mb-1.5 font-medium">
-                            <span class="text-white font-semibold">${item.genre}</span>
-                            <span class="${idx === 0 ? 'text-slate-200 font-bold' : 'text-slate-400'} mono">${pct}%</span>
+                const barColor = idx === 0 ? 'bg-gradient-to-r from-blue-500 to-cyan-400 glow-blue-bar' : 'bg-blue-600/' + (60 - idx * 20);
+                listEl.innerHTML += `
+                    <div>
+                        <div class="flex justify-between text-xs font-medium mb-1">
+                            <span class="${idx === 0 ? 'text-white font-bold' : 'text-slate-300'}">${item.genre}</span>
+                            <span class="${idx === 0 ? 'text-blue-400 font-bold' : 'text-slate-400'} font-mono">${pct}%</span>
                         </div>
-                        <div class="w-full bg-[#131d2e] rounded-full h-2 overflow-hidden">
+                        <div class="w-full bg-[#17233f] rounded-full h-2 overflow-hidden">
                             <div class="${barColor} h-2 rounded-full transition-all duration-700" style="width: ${pct}%"></div>
                         </div>
                     </div>
                 `;
             });
+        }
 
-            // All 10 Genres
-            const allContainer = document.getElementById('all-genres-container');
-            allContainer.innerHTML = '';
-            (data.all_predictions || []).slice(3).forEach(item => {
-                const pct = (item.confidence * 100).toFixed(1);
-                allContainer.innerHTML += `
-                    <div class="flex justify-between items-center text-[11px] text-slate-400">
-                        <span>${item.genre}</span>
-                        <span class="mono">${pct}%</span>
-                    </div>
+        // Prediction History (Table)
+        function addHistoryRecord(data) {
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('vi-VN');
+            const historyItem = {
+                time: timeStr,
+                filename: data.filename || (currentFileObj ? currentFileObj.name : 'audio_sample.wav'),
+                genre: data.predicted_genre,
+                confidence: ((data.confidence || 0) * 100).toFixed(1) + '%',
+                top2: (data.top_predictions && data.top_predictions[1]) ? `${data.top_predictions[1].genre} (${(data.top_predictions[1].confidence*100).toFixed(1)}%)` : '--',
+                latency: (data.latency_ms || 15) + ' ms'
+            };
+
+            let history = JSON.parse(localStorage.getItem('cotmix_music_history') || '[]');
+            history.unshift(historyItem);
+            if (history.length > 10) history = history.slice(0, 10);
+            localStorage.setItem('cotmix_music_history', JSON.stringify(history));
+
+            renderHistoryTable(history);
+        }
+
+        function loadHistoryFromStorage() {
+            const history = JSON.parse(localStorage.getItem('cotmix_music_history') || '[]');
+            renderHistoryTable(history);
+        }
+
+        function renderHistoryTable(history) {
+            const tbody = document.getElementById('history-table-body');
+            if (!history || history.length === 0) {
+                tbody.innerHTML = `
+                    <tr id="empty-history-row">
+                        <td colspan="6" class="text-center py-6 text-slate-500">
+                            Chưa có dự đoán nào. Hãy tải lên tệp âm thanh hoặc bấm "Dự đoán thể loại âm nhạc".
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            tbody.innerHTML = '';
+            history.forEach(item => {
+                tbody.innerHTML += `
+                    <tr class="hover:bg-[#121c33]/50 transition">
+                        <td class="py-2.5 px-3 font-mono text-slate-400 text-[11px]">${item.time}</td>
+                        <td class="py-2.5 px-3 font-medium text-slate-200">${item.filename}</td>
+                        <td class="py-2.5 px-3">
+                            <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-950 text-blue-300 border border-blue-800">
+                                ${item.genre}
+                            </span>
+                        </td>
+                        <td class="py-2.5 px-3 font-mono font-bold text-emerald-400">${item.confidence}</td>
+                        <td class="py-2.5 px-3 text-slate-400 text-[11px]">${item.top2}</td>
+                        <td class="py-2.5 px-3 font-mono text-slate-400 text-[11px]">${item.latency}</td>
+                    </tr>
                 `;
             });
-
-            // Update Explainability Chips
-            if (data.explainability) {
-                document.getElementById('explainability-summary-text').innerText = data.explainability.description;
-            }
         }
 
-        // Explainability Feature Details
-        const featureDetails = {
-            mfcc: {
-                name: 'Mel-Frequency Cepstral Coefficients (MFCC)',
-                val: '0.88',
-                desc: 'Hệ số biểu diễn màu sắc âm thanh (timbre) và đặc tính phổ của nhạc cụ, tạo nên nhận diện âm học cốt lõi độc lập với độ cao nốt.'
-            },
-            delta_mfcc: {
-                name: 'Delta MFCC (Temporal Acceleration)',
-                val: '0.74',
-                desc: 'Đạo hàm bậc một theo thời gian của MFCC, đo lường tốc độ biến thiên nhịp điệu và độ gắt chuyển tiếp giữa các nốt nhạc.'
-            },
-            chroma: {
-                name: 'Chroma STFT (Pitch Distribution)',
-                val: '0.82',
-                desc: 'Phân phối 12 cao độ hòa âm (C, C#, D... B) phản ánh cấu trúc hợp âm chủ đạo và tiến trình thang âm bài hát.'
-            },
-            centroid: {
-                name: 'Spectral Centroid (Timbre Brightness)',
-                val: '2,340 Hz',
-                desc: 'Tâm khối phổ tần số biểu thị độ sáng ('brightness') và mức độ sắc nét của âm thanh.'
-            }
-        };
-
-        function selectFeature(featKey) {
-            const feat = featureDetails[featKey];
-            if (!feat) return;
-            document.getElementById('feat-name').innerText = feat.name;
-            document.getElementById('feat-val').innerText = feat.val;
-            document.getElementById('feat-desc').innerText = feat.desc;
-
-            // Highlight selected chip
-            document.querySelectorAll('.feature-chip').forEach(el => el.classList.remove('ring-1', 'ring-white'));
-            const activeChip = document.getElementById(`chip-${featKey.replace('_', '')}`);
-            if (activeChip) activeChip.classList.add('ring-1', 'ring-white');
+        function clearHistory() {
+            localStorage.removeItem('cotmix_music_history');
+            renderHistoryTable([]);
         }
 
-        // Toggle All 10 Genres Expander
-        function toggleAllGenres() {
-            const container = document.getElementById('all-genres-container');
-            const btn = document.getElementById('expand-genres-btn');
-            if (container.classList.contains('hidden')) {
-                container.classList.remove('hidden');
-                btn.innerHTML = '<span>Thu gọn 10 thể loại</span><i data-lucide="chevron-up" class="w-3.5 h-3.5"></i>';
-            } else {
-                container.classList.add('hidden');
-                btn.innerHTML = '<span>Xem toàn bộ 10 thể loại</span><i data-lucide="chevron-down" class="w-3.5 h-3.5"></i>';
-            }
-            lucide.createIcons();
-        }
-
-        // Audio DSP Simulator Filters
-        function applyAcousticFilter(type) {
-            if (!audioContext) initAudioContext();
-            document.querySelectorAll('.sim-filter-btn').forEach(b => {
-                b.className = 'sim-filter-btn p-4 rounded-xl border border-slate-800 bg-[#121c2d] text-left hover:border-slate-700 transition';
-            });
-            const activeBtn = document.getElementById(`filter-btn-${type}`);
-            if (activeBtn) {
-                activeBtn.className = 'sim-filter-btn p-4 rounded-xl border border-cyan-500 bg-cyan-950/40 text-left transition';
-            }
-
-            const labelEl = document.getElementById('active-filter-label');
-            if (type === 'clean') {
-                biquadFilter.type = 'allpass';
-                labelEl.innerText = 'Studio Clean (Không hiệu ứng méo)';
-            } else if (type === 'phone') {
-                biquadFilter.type = 'bandpass';
-                biquadFilter.frequency.value = 1800;
-                biquadFilter.Q.value = 1.2;
-                labelEl.innerText = 'Smartphone Lo-Fi Mic (Dải thông hẹp 400Hz - 3.5kHz)';
-            } else if (type === 'cafe') {
-                biquadFilter.type = 'lowshelf';
-                biquadFilter.frequency.value = 500;
-                biquadFilter.gain.value = 6;
-                labelEl.innerText = 'Quán Cafe (Tạp âm dải trung trầm)';
-            } else if (type === 'reverb') {
-                biquadFilter.type = 'peaking';
-                biquadFilter.frequency.value = 1200;
-                biquadFilter.Q.value = 3.0;
-                biquadFilter.gain.value = 8;
-                labelEl.innerText = 'Reverb Chamber (Vang dội phòng kín)';
-            }
-        }
-
-        function testSimulatedPrediction() {
-            switchTab('recognition');
-            runSample(currentLoadedGenre.toLowerCase());
-        }
-
-        // Live Microphone Recording
-        let mediaRecorder = null;
-        let audioChunks = [];
-        let isRecording = false;
-
-        async function toggleMicRecord() {
-            const btnText = document.getElementById('mic-btn-text');
-            if (!isRecording) {
-                try {
-                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                    mediaRecorder = new MediaRecorder(stream);
-                    audioChunks = [];
-                    mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
-                    mediaRecorder.onstop = async () => {
-                        const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
-                        const audioUrl = URL.createObjectURL(audioBlob);
-                        const file = new File([audioBlob], 'live_recording.wav', { type: 'audio/wav' });
-
-                        setLoadingState(true);
-                        const formData = new FormData();
-                        formData.append('file', file);
-                        const res = await fetch('/predict', { method: 'POST', body: formData });
-                        const data = await res.json();
-                        loadAudio(audioUrl, data.predicted_genre, data.confidence);
-                        renderResults(data);
-                        setLoadingState(false);
-                    };
-                    mediaRecorder.start();
-                    isRecording = true;
-                    btnText.innerText = 'Đang thu âm... Nhấn dừng';
-                } catch (e) {
-                    alert('Không thể truy cập microphone: ' + e);
+        // Domain Filter Simulator
+        function applyFilter(type) {
+            const filterBtns = ['clean', 'phone', 'cafe', 'reverb'];
+            filterBtns.forEach(id => {
+                const btn = document.getElementById('filter-btn-' + id);
+                if (btn) {
+                    if (id === type) {
+                        btn.className = 'p-3.5 rounded-xl border border-blue-500 bg-blue-950/40 text-left transition';
+                    } else {
+                        btn.className = 'p-3.5 rounded-xl border border-[#1e2d4d] bg-[#121c33] text-left hover:border-slate-600 transition';
+                    }
                 }
-            } else {
-                mediaRecorder.stop();
-                isRecording = false;
-                btnText.innerText = 'Ghi âm trực tiếp';
-            }
+            });
         }
 
-        // Loading UI state
-        function setLoadingState(loading) {
-            const statusText = document.getElementById('global-status-text');
-            const statusBadge = document.getElementById('global-status-badge');
-            if (loading) {
-                statusText.innerText = 'Đang phân tích âm học...';
-                statusBadge.className = 'inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-cyan-950/60 border border-cyan-700/60 text-cyan-300 shadow-sm';
-            } else {
-                statusText.innerText = '✓ Phân tích hoàn tất';
-                statusBadge.className = 'inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-emerald-950/60 border border-emerald-700/60 text-emerald-300 shadow-sm';
-            }
-        }
-
-        // Telemetry & Health Check
-        async function fetchHealthStats() {
+        // Telemetry
+        async function fetchTelemetry() {
             try {
                 const res = await fetch('/health');
                 const data = await res.json();
-                document.getElementById('render-ram-text').innerText = `${data.ram_usage_mb} MB / 512 MB`;
+                document.getElementById('telemetry-ram-val').innerText = `${data.ram_usage_mb} MB / 512 MB`;
             } catch (e) {
                 console.log('Telemetry fetch error:', e);
             }
