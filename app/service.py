@@ -171,6 +171,12 @@ class MusicGenrePredictor:
         if y.ndim > 1:
             y = np.mean(y, axis=1)
 
+        # Volume / Peak Normalization to standardize audio levels across sources (crucial for mic records)
+        max_val = float(np.max(np.abs(y))) if len(y) > 0 else 0.0
+        if max_val < 0.003:
+            raise ValueError("Tín hiệu âm thanh quá nhỏ hoặc im lặng. Vui lòng bật nhạc to hơn hoặc đưa microphone lại gần nguồn phát nhạc.")
+        y = (y / max_val) * 0.95
+
         # Optimization: Slice to target duration BEFORE resampling to save 80% RAM & compute
         target_dur = self.clip_len / self.target_sr  # 8.192s
         slice_samples = int(target_dur * file_sr)
@@ -220,10 +226,10 @@ class MusicGenrePredictor:
         else:
             mel = mel[:, :256]
 
-        # Normalized Log-Mel Spectrogram matching training
+        # Normalized Log-Mel Spectrogram matching training (top_db=80.0)
         ref = torch.max(mel)
-        if ref > 1e-10:
-            log_mel = 10.0 * torch.log10(torch.clamp(mel / ref, min=1e-10))
+        if ref > 1e-8:
+            log_mel = 10.0 * torch.log10(torch.clamp(mel / ref, min=1e-8))
         else:
             log_mel = torch.zeros_like(mel)
 

@@ -580,11 +580,11 @@ def serve_ui():
 
     <!-- SCRIPT APPLICATION -->
     <script>
-        // State variables
+        // State variables (explicitly separated to prevent cross-mode contamination)
         let currentMode = 'upload'; // 'upload' or 'record'
-        let currentAudioUrl = null;
+        let uploadedFile = null;
+        let recordedFile = null;
         let currentLoadedGenre = null;
-        let currentFileObj = null;
         let isPlaying = false;
         let isRecording = false;
 
@@ -650,6 +650,16 @@ def serve_ui():
             }
         }
 
+        function resetPlayer() {
+            audioPlayer.pause();
+            audioPlayer.removeAttribute('src');
+            audioPlayer.load();
+            isPlaying = false;
+            playSvg.innerHTML = '<path d="M8 5v14l11-7z"/>';
+            timeDisplay.innerText = '0:00 / 0:00';
+            updateTimelineProgress(0);
+        }
+
         // Mode Switcher (Upload vs Record)
         function setMode(mode) {
             currentMode = mode;
@@ -663,11 +673,37 @@ def serve_ui():
                 recBtn.className = 'flex items-center justify-center space-x-2 py-2.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition';
                 upPanel.classList.remove('hidden');
                 recPanel.classList.add('hidden');
+
+                // Synchronize Audio Player & Dropzone UI to Upload Mode
+                if (uploadedFile) {
+                    const url = URL.createObjectURL(uploadedFile);
+                    loadAudio(url, uploadedFile.name);
+                    document.getElementById('selected-file-name').innerText = uploadedFile.name;
+                    document.getElementById('selected-file-pill').classList.remove('hidden');
+                    document.getElementById('selected-file-pill').classList.add('flex');
+                    document.getElementById('drop-title').innerText = 'Đã chọn tệp: ' + uploadedFile.name;
+                } else if (currentLoadedGenre) {
+                    loadAudio('/samples/' + currentLoadedGenre, currentLoadedGenre + '_sample.wav');
+                    document.getElementById('selected-file-pill').classList.add('hidden');
+                    document.getElementById('drop-title').innerText = 'Mẫu thử: ' + currentLoadedGenre.toUpperCase();
+                } else {
+                    resetPlayer();
+                    document.getElementById('selected-file-pill').classList.add('hidden');
+                    document.getElementById('drop-title').innerText = 'Kéo thả tệp âm thanh vào đây hoặc nhấp để duyệt';
+                }
             } else {
                 recBtn.className = 'flex items-center justify-center space-x-2 py-2.5 rounded-lg text-xs font-semibold text-white bg-blue-600 shadow-sm transition';
                 upBtn.className = 'flex items-center justify-center space-x-2 py-2.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition';
                 recPanel.classList.remove('hidden');
                 upPanel.classList.add('hidden');
+
+                // Synchronize Audio Player to Record Mode
+                if (recordedFile) {
+                    const audioUrl = URL.createObjectURL(recordedFile);
+                    loadAudio(audioUrl, 'Bản ghi âm mic');
+                } else {
+                    resetPlayer();
+                }
             }
         }
 
@@ -715,8 +751,9 @@ def serve_ui():
         });
 
         function handleAudioFile(file) {
-            currentFileObj = file;
+            uploadedFile = file;
             currentLoadedGenre = null; // Prioritize uploaded file
+            setMode('upload');
             const url = URL.createObjectURL(file);
             loadAudio(url, file.name);
 
@@ -783,15 +820,15 @@ def serve_ui():
 
         // Preset Sample Picker
         function pickPreset(genre) {
-            setMode('upload');
-            currentFileObj = null; // Clear manual file, use sample preset
+            uploadedFile = null; // Clear manual file, use sample preset
             currentLoadedGenre = genre;
+            setMode('upload');
             document.getElementById('selected-file-pill').classList.add('hidden');
             document.getElementById('drop-title').innerText = 'Mẫu thử: ' + genre.toUpperCase();
             loadAudio('/samples/' + genre, genre + '_sample.wav');
         }
 
-        // --- NATIVE 16KHz PCM WAV RECORDER (Guarantees 100% genuine WAV bytes) ---
+        // --- HIGH-FIDELITY RAW PCM WAV RECORDER (Optimized for Music & Instruments) ---
         async function toggleRecordState() {
             const btn = document.getElementById('record-action-btn');
             const btnText = document.getElementById('record-btn-text');
@@ -801,7 +838,15 @@ def serve_ui():
 
             if (!isRecording) {
                 try {
-                    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    // Disable speech noise suppression & echo cancellation so musical instruments aren't muffled
+                    micStream = await navigator.mediaDevices.getUserMedia({
+                        audio: {
+                            echoCancellation: false,
+                            noiseSuppression: false,
+                            autoGainControl: false,
+                            channelCount: 1
+                        }
+                    });
                     const AudioCtx = window.AudioContext || window.webkitAudioContext;
                     audioContext = new AudioCtx();
                     mediaStreamSource = audioContext.createMediaStreamSource(micStream);
@@ -816,10 +861,14 @@ def serve_ui():
                     };
 
                     mediaStreamSource.connect(scriptProcessor);
-                    scriptProcessor.connect(audioContext.destination);
+                    // Route to muted gain node so mic doesn't create feedback loop into laptop speakers
+                    const muteGain = audioContext.createGain();
+                    muteGain.gain.value = 0;
+                    scriptProcessor.connect(muteGain);
+                    muteGain.connect(audioContext.destination);
 
                     isRecording = true;
-                    statusEl.innerText = 'Đang thu âm... Hãy hát hoặc mở nhạc gần mic';
+                    statusEl.innerText = 'Đang thu âm... Hãy mở hoặc phát đoạn nhạc gần mic (khuyến nghị 6-10s)';
                     btnText.innerText = 'Dừng & Lưu ghi âm';
                     btn.className = 'px-5 py-2.5 rounded-xl text-xs font-semibold bg-slate-700 hover:bg-slate-600 text-white shadow-lg transition flex items-center space-x-1.5';
                     pulseRing.classList.add('animate-pulse');
@@ -864,37 +913,45 @@ def serve_ui():
                 const targetRate = 16000;
                 const finalPcm = downsamplePCM(mergedFloat32, inRate, targetRate);
 
+                // Amplitude Normalization for mic recording so it matches studio track dynamics
+                let maxAmp = 0;
+                for (let i = 0; i < finalPcm.length; i++) {
+                    const abs = Math.abs(finalPcm[i]);
+                    if (abs > maxAmp) maxAmp = abs;
+                }
+                if (maxAmp > 0.001) {
+                    const scale = 0.90 / maxAmp;
+                    for (let i = 0; i < finalPcm.length; i++) {
+                        finalPcm[i] = Math.max(-1, Math.min(1, finalPcm[i] * scale));
+                    }
+                }
+
                 // Encode to real RIFF/WAVE PCM 16-bit
                 const wavBlob = encodeWAV16Bit(finalPcm, targetRate);
-                currentFileObj = new File([wavBlob], 'live_mic_record.wav', { type: 'audio/wav' });
-                currentLoadedGenre = null;
+                recordedFile = new File([wavBlob], 'live_mic_record.wav', { type: 'audio/wav' });
 
                 const audioUrl = URL.createObjectURL(wavBlob);
-                loadAudio(audioUrl, 'Bản ghi âm');
+                loadAudio(audioUrl, 'Bản ghi âm mic');
 
-                statusEl.innerText = 'Đã ghi âm xong (sẵn sàng dự đoán)';
+                statusEl.innerText = `Đã ghi âm xong (${recordSeconds}s - sẵn sàng dự đoán)`;
                 btnText.innerText = 'Bắt đầu ghi âm mới';
                 btn.className = 'px-5 py-2.5 rounded-xl text-xs font-semibold bg-rose-600 hover:bg-rose-500 text-white shadow-lg transition flex items-center space-x-1.5';
+                showToast(`Đã ghi âm thành công đoạn nhạc (${recordSeconds}s). Hãy bấm "Dự đoán thể loại âm nhạc"!`, 'success', 4000);
             }
         }
 
+        // High quality Linear Interpolation Downsampler
         function downsamplePCM(buffer, fromRate, toRate) {
             if (fromRate === toRate) return buffer;
             const ratio = fromRate / toRate;
             const newLen = Math.round(buffer.length / ratio);
             const result = new Float32Array(newLen);
-            let offsetResult = 0;
-            let offsetBuffer = 0;
-            while (offsetResult < result.length) {
-                const nextOffsetBuffer = Math.round((offsetResult + 1) * ratio);
-                let accum = 0, count = 0;
-                for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) {
-                    accum += buffer[i];
-                    count++;
-                }
-                result[offsetResult] = count > 0 ? (accum / count) : 0;
-                offsetResult++;
-                offsetBuffer = nextOffsetBuffer;
+            for (let i = 0; i < newLen; i++) {
+                const originIdx = i * ratio;
+                const idxFloor = Math.floor(originIdx);
+                const idxCeil = Math.min(buffer.length - 1, idxFloor + 1);
+                const frac = originIdx - idxFloor;
+                result[i] = buffer[idxFloor] * (1 - frac) + buffer[idxCeil] * frac;
             }
             return result;
         }
@@ -984,9 +1041,24 @@ def serve_ui():
         async function executePrediction() {
             if (isPredicting) return;
 
-            if (!currentFileObj && !currentLoadedGenre) {
-                showToast('Vui lòng chọn một tệp âm thanh, ghi âm qua mic hoặc chọn mẫu thử trước khi bấm dự đoán.', 'warning');
-                return;
+            let fileToSend = null;
+            let sampleGenreToSend = null;
+
+            if (currentMode === 'record') {
+                if (!recordedFile) {
+                    showToast('Bạn đang ở chế độ Ghi âm. Vui lòng bấm "Bắt đầu ghi âm" và phát đoạn nhạc gần mic trước khi dự đoán.', 'warning');
+                    return;
+                }
+                fileToSend = recordedFile;
+            } else {
+                if (uploadedFile) {
+                    fileToSend = uploadedFile;
+                } else if (currentLoadedGenre) {
+                    sampleGenreToSend = currentLoadedGenre;
+                } else {
+                    showToast('Vui lòng chọn hoặc tải lên một tệp âm thanh, hoặc bấm mẫu thử trước khi dự đoán.', 'warning');
+                    return;
+                }
             }
 
             const runBtn = document.getElementById('run-predict-btn');
@@ -1013,9 +1085,9 @@ def serve_ui():
                 for (let attempt = 0; attempt <= maxRetries; attempt++) {
                     try {
                         let data = null;
-                        if (currentFileObj) {
+                        if (fileToSend) {
                             const formData = new FormData();
-                            formData.append('file', currentFileObj);
+                            formData.append('file', fileToSend);
                             const res = await fetch('/predict', { method: 'POST', body: formData });
                             if (res.status === 502 || res.status === 503 || res.status === 504) {
                                 if (attempt < maxRetries) {
@@ -1029,8 +1101,8 @@ def serve_ui():
                                 throw new Error(errData.detail || 'Máy chủ trả về mã lỗi ' + res.status);
                             }
                             data = await res.json();
-                        } else if (currentLoadedGenre) {
-                            const genreKey = currentLoadedGenre.toLowerCase();
+                        } else if (sampleGenreToSend) {
+                            const genreKey = sampleGenreToSend.toLowerCase();
                             const res = await fetch('/sample-predict/' + genreKey, { method: 'POST' });
                             if (res.status === 502 || res.status === 503 || res.status === 504) {
                                 if (attempt < maxRetries) {
@@ -1044,6 +1116,10 @@ def serve_ui():
                                 throw new Error(errData.detail || 'Máy chủ trả về mã lỗi ' + res.status);
                             }
                             data = await res.json();
+                        }
+
+                        if (data && data.error) {
+                            throw new Error(data.error);
                         }
 
                         if (!data || !data.predicted_genre) {
@@ -1129,9 +1205,12 @@ def serve_ui():
         function addHistoryRecord(data) {
             const now = new Date();
             const timeStr = now.toLocaleTimeString('vi-VN');
+            const fallbackName = (currentMode === 'record') 
+                ? 'Bản ghi âm mic.wav' 
+                : (uploadedFile ? uploadedFile.name : `${currentLoadedGenre || 'audio'}_sample.wav`);
             const historyItem = {
                 time: timeStr,
-                filename: data.filename || (currentFileObj ? currentFileObj.name : 'audio_sample.wav'),
+                filename: data.filename || fallbackName,
                 genre: data.predicted_genre,
                 confidence: ((data.confidence || 0) * 100).toFixed(1) + '%',
                 top2: (data.top_predictions && data.top_predictions[1]) ? `${data.top_predictions[1].genre} (${(data.top_predictions[1].confidence*100).toFixed(1)}%)` : '--',
