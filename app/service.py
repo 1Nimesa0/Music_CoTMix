@@ -106,11 +106,20 @@ class MusicGenrePredictor:
             try:
                 y, file_sr = sf.read(audio_io)
             except Exception:
+                import tempfile
+                with tempfile.NamedTemporaryFile(suffix=".audio", delete=False) as tmp:
+                    tmp.write(audio_data)
+                    tmp_path = tmp.name
                 try:
-                    audio_io.seek(0)
-                    y, file_sr = librosa.load(audio_io, sr=None)
+                    y, file_sr = librosa.load(tmp_path, sr=None)
                 except Exception as ex:
-                    raise ValueError(f"Không thể giải mã tệp âm thanh: {str(ex)}")
+                    raise ValueError(f"Không thể giải mã tệp âm thanh ({str(ex)})")
+                finally:
+                    if os.path.exists(tmp_path):
+                        try:
+                            os.remove(tmp_path)
+                        except Exception:
+                            pass
         elif isinstance(audio_data, str) and os.path.exists(audio_data):
             try:
                 y, file_sr = sf.read(audio_data)

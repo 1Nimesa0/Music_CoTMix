@@ -14,7 +14,7 @@ from app.service import MusicGenrePredictor
 app = FastAPI(
     title="Cross-Environment Music Genre Recognition API (CoTMix + AudioCNN)",
     description="Online low-latency inference engine optimized for Render free/starter instances.",
-    version="2.1.0"
+    version="2.2.0"
 )
 
 app.add_middleware(
@@ -77,6 +77,8 @@ async def predict_genre(file: UploadFile = File(...)):
 
     try:
         audio_bytes = await file.read()
+        if len(audio_bytes) < 100:
+            raise ValueError("Tệp âm thanh quá ngắn hoặc không có dữ liệu.")
         result = p.predict(audio_bytes)
         result["filename"] = file.filename or "uploaded_audio.wav"
         return JSONResponse(content=result)
@@ -182,10 +184,6 @@ def serve_ui():
         .glow-blue-bar {
             box-shadow: 0 0 10px rgba(37, 99, 235, 0.7);
         }
-        .glow-cyan-bar {
-            box-shadow: 0 0 10px rgba(6, 182, 212, 0.7);
-        }
-        /* Custom timeline track */
         .timeline-dot {
             width: 4px;
             height: 12px;
@@ -289,7 +287,7 @@ def serve_ui():
                 <!-- LEFT CARD: FUNCTION BUTTONS & INPUT -->
                 <div class="card-box p-6 flex flex-col justify-between space-y-5">
                     <div>
-                        <!-- TWO FUNCTION TOGGLE BUTTONS (Inspired by reference) -->
+                        <!-- TWO FUNCTION TOGGLE BUTTONS -->
                         <div class="grid grid-cols-2 gap-3 p-1 bg-[#121c33] rounded-xl border border-[#1e2d4d]">
                             <button id="mode-record-btn" onclick="setMode('record')" class="flex items-center justify-center space-x-2 py-2.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition">
                                 <svg class="w-4 h-4 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 100-6 3 3 0 000 6z"></path></svg>
@@ -330,8 +328,8 @@ def serve_ui():
                                     <p id="record-timer" class="text-lg font-bold text-rose-400 font-mono mt-1">00:00</p>
                                 </div>
                                 <div class="flex items-center space-x-2 pt-1">
-                                    <button id="record-action-btn" onclick="toggleRecordState()" class="px-5 py-2 rounded-xl text-xs font-semibold bg-rose-600 hover:bg-rose-500 text-white shadow-lg shadow-rose-600/30 transition">
-                                        Bắt đầu ghi âm
+                                    <button id="record-action-btn" onclick="toggleRecordState()" class="px-5 py-2.5 rounded-xl text-xs font-semibold bg-rose-600 hover:bg-rose-500 text-white shadow-lg shadow-rose-600/30 transition flex items-center space-x-1.5">
+                                        <span id="record-btn-text">Bắt đầu ghi âm</span>
                                     </button>
                                 </div>
                             </div>
@@ -348,7 +346,7 @@ def serve_ui():
                                 <!-- Generated dynamically -->
                             </div>
 
-                            <span id="player-time-display" class="text-xs text-slate-400 font-mono shrink-0 font-medium">0:00 / 0:30</span>
+                            <span id="player-time-display" class="text-xs text-slate-400 font-mono shrink-0 font-medium">0:00 / 0:00</span>
                         </div>
 
                         <!-- PRESETS QUICK-TEST BUTTONS -->
@@ -379,24 +377,24 @@ def serve_ui():
                                 <span>✦</span>
                                 <h3 class="text-sm font-bold text-white tracking-tight">Kết quả dự đoán</h3>
                             </div>
-                            <span id="status-pill-badge" class="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-950/60 text-emerald-400 border border-emerald-800">
-                                Sẵn sàng
+                            <span id="status-pill-badge" class="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-slate-800 text-slate-400 border border-slate-700">
+                                Chờ dự đoán
                             </span>
                         </div>
 
                         <!-- Predicted Genre Hero Block -->
                         <div class="mt-6 flex items-center space-x-4 p-4 rounded-2xl bg-[#121c33] border border-[#1e2d4d]">
                             <div id="genre-avatar-box" class="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-600/20 to-purple-600/20 text-3xl flex items-center justify-center border border-blue-500/30 shrink-0">
-                                🎷
+                                🎵
                             </div>
                             <div>
-                                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">ĐỘ TUỔI / THỂ LOẠI DỰ ĐOÁN</span>
-                                <h2 id="result-genre-title" class="text-3xl font-extrabold text-white mt-0.5">Jazz</h2>
+                                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">THỂ LOẠI DỰ ĐOÁN</span>
+                                <h2 id="result-genre-title" class="text-3xl font-extrabold text-white mt-0.5">--</h2>
                                 <div class="mt-1 flex items-center space-x-2">
-                                    <span id="result-conf-pill" class="text-xs font-bold text-blue-400 font-mono bg-blue-950/80 px-2 py-0.5 rounded-md border border-blue-700/60">
-                                        Độ tin cậy: 92.4%
+                                    <span id="result-conf-pill" class="text-xs font-bold text-slate-400 font-mono bg-slate-800/80 px-2 py-0.5 rounded-md border border-slate-700">
+                                        Độ tin cậy: —
                                     </span>
-                                    <span id="result-sublabel" class="text-xs text-slate-400">Nhạc Jazz &bull; Hàng đầu</span>
+                                    <span id="result-sublabel" class="text-xs text-slate-400">Chờ dữ liệu phân tích</span>
                                 </div>
                             </div>
                         </div>
@@ -408,54 +406,30 @@ def serve_ui():
                                 <span class="text-[10px] text-blue-400 font-mono">Ranked Softmax</span>
                             </div>
 
-                            <div id="probability-list" class="space-y-3.5">
-                                <!-- Item 1 -->
-                                <div>
-                                    <div class="flex justify-between text-xs font-medium mb-1">
-                                        <span class="text-white">Jazz</span>
-                                        <span class="text-blue-400 font-mono font-bold">92.4%</span>
-                                    </div>
-                                    <div class="w-full bg-[#17233f] rounded-full h-2 overflow-hidden">
-                                        <div class="bg-gradient-to-r from-blue-500 to-cyan-400 h-2 rounded-full glow-blue-bar transition-all duration-700" style="width: 92.4%"></div>
-                                    </div>
-                                </div>
-                                <!-- Item 2 -->
-                                <div>
-                                    <div class="flex justify-between text-xs font-medium mb-1">
-                                        <span class="text-slate-300">Blues</span>
-                                        <span class="text-slate-400 font-mono">5.1%</span>
-                                    </div>
-                                    <div class="w-full bg-[#17233f] rounded-full h-2 overflow-hidden">
-                                        <div class="bg-blue-600/60 h-2 rounded-full transition-all duration-700" style="width: 12%"></div>
-                                    </div>
-                                </div>
-                                <!-- Item 3 -->
-                                <div>
-                                    <div class="flex justify-between text-xs font-medium mb-1">
-                                        <span class="text-slate-300">Classical</span>
-                                        <span class="text-slate-400 font-mono">2.5%</span>
-                                    </div>
-                                    <div class="w-full bg-[#17233f] rounded-full h-2 overflow-hidden">
-                                        <div class="bg-blue-600/40 h-2 rounded-full transition-all duration-700" style="width: 7%"></div>
-                                    </div>
-                                </div>
+                            <!-- Initial waiting placeholder -->
+                            <div id="probability-placeholder" class="text-center py-7 px-4 rounded-xl border border-dashed border-[#1e2d4d] bg-[#121c33]/40">
+                                <p class="text-xs text-slate-300 font-medium">Chưa có kết quả dự đoán</p>
+                                <p class="text-[11px] text-slate-500 mt-1">Vui lòng tải tệp hoặc ghi âm rồi bấm <span class="text-blue-400 font-semibold">"✦ Dự đoán thể loại âm nhạc"</span> để xem kết quả.</p>
                             </div>
+
+                            <!-- Filled dynamically after predict -->
+                            <div id="probability-list" class="hidden space-y-3.5"></div>
                         </div>
                     </div>
 
                     <!-- Domain Shift & Telemetry Tag -->
                     <div class="pt-4 border-t border-[#17233f] flex items-center justify-between text-xs text-slate-400">
                         <div class="flex items-center space-x-1.5">
-                            <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
-                            <span>CoTMix Adaptation: <strong class="text-emerald-300">Active</strong></span>
+                            <span id="domain-dot" class="w-2 h-2 rounded-full bg-slate-500"></span>
+                            <span>CoTMix Adaptation: <strong id="domain-text" class="text-slate-400">Sẵn sàng</strong></span>
                         </div>
-                        <span id="result-latency" class="font-mono text-blue-400">14.2 ms (CPU)</span>
+                        <span id="result-latency" class="font-mono text-slate-500">-- ms</span>
                     </div>
                 </div>
 
             </div>
 
-            <!-- BOTTOM CARD: LỊCH SỬ DỰ ĐOÁN (Table as in reference image) -->
+            <!-- BOTTOM CARD: LỊCH SỬ DỰ ĐOÁN (Table) -->
             <div class="card-box p-6 space-y-4">
                 <div class="flex items-center justify-between pb-3 border-b border-[#17233f]">
                     <div class="flex items-center space-x-2 text-white font-bold text-sm">
@@ -605,13 +579,18 @@ def serve_ui():
     <script>
         // State variables
         let currentMode = 'upload'; // 'upload' or 'record'
-        let currentAudioUrl = '/samples/jazz';
-        let currentLoadedGenre = 'Jazz';
+        let currentAudioUrl = null;
+        let currentLoadedGenre = null;
         let currentFileObj = null;
         let isPlaying = false;
         let isRecording = false;
-        let mediaRecorder = null;
-        let recordedChunks = [];
+
+        // Web Audio PCM Recorder Variables
+        let audioContext = null;
+        let micStream = null;
+        let mediaStreamSource = null;
+        let scriptProcessor = null;
+        let pcmBuffer = [];
         let recordInterval = null;
         let recordSeconds = 0;
 
@@ -636,15 +615,14 @@ def serve_ui():
             'Country': '🪕'
         };
 
-        // Initialize page
+        // Initialize page without prefilling Jazz
         window.addEventListener('DOMContentLoaded', () => {
             initTimelineDots(32);
-            loadAudio('/samples/jazz', 'Jazz', 'jazz_sample.wav');
             loadHistoryFromStorage();
             fetchTelemetry();
         });
 
-        // Initialize Timeline Dots (Waveform mockup)
+        // Initialize Timeline Dots
         function initTimelineDots(count) {
             dotsContainer.innerHTML = '';
             for (let i = 0; i < count; i++) {
@@ -735,8 +713,9 @@ def serve_ui():
 
         function handleAudioFile(file) {
             currentFileObj = file;
+            currentLoadedGenre = null; // Prioritize uploaded file
             const url = URL.createObjectURL(file);
-            loadAudio(url, file.name.split('.')[0], file.name);
+            loadAudio(url, file.name);
 
             // Show selected pill
             document.getElementById('selected-file-name').innerText = file.name;
@@ -746,13 +725,12 @@ def serve_ui():
         }
 
         // Load Audio into HTML5 player
-        function loadAudio(url, genreName, fileName) {
+        function loadAudio(url, title) {
             audioPlayer.src = url;
             currentAudioUrl = url;
-            currentLoadedGenre = genreName;
 
             audioPlayer.onloadedmetadata = () => {
-                const dur = Math.floor(audioPlayer.duration || 30);
+                const dur = Math.floor(audioPlayer.duration || 0);
                 const m = Math.floor(dur / 60);
                 const s = String(dur % 60).padStart(2, '0');
                 timeDisplay.innerText = `0:00 / ${m}:${s}`;
@@ -761,7 +739,7 @@ def serve_ui():
 
             audioPlayer.ontimeupdate = () => {
                 const cur = Math.floor(audioPlayer.currentTime || 0);
-                const dur = Math.floor(audioPlayer.duration || 30);
+                const dur = Math.floor(audioPlayer.duration || 1);
                 const cm = Math.floor(cur / 60);
                 const cs = String(cur % 60).padStart(2, '0');
                 const dm = Math.floor(dur / 60);
@@ -779,7 +757,10 @@ def serve_ui():
 
         // Play / Pause Toggle
         function togglePlay() {
-            if (!audioPlayer.src) return;
+            if (!audioPlayer.src) {
+                alert('Chưa có tệp âm thanh nào được nạp. Hãy chọn một file, bấm mẫu thử hoặc ghi âm trước.');
+                return;
+            }
             if (isPlaying) {
                 audioPlayer.pause();
                 isPlaying = false;
@@ -800,46 +781,45 @@ def serve_ui():
         // Preset Sample Picker
         function pickPreset(genre) {
             setMode('upload');
-            currentFileObj = null;
+            currentFileObj = null; // Clear manual file, use sample preset
+            currentLoadedGenre = genre;
             document.getElementById('selected-file-pill').classList.add('hidden');
-            document.getElementById('drop-title').innerText = 'Kéo thả hoặc bấm để chọn file';
-            currentLoadedGenre = genre.charAt(0).toUpperCase() + genre.slice(1);
-            loadAudio('/samples/' + genre, currentLoadedGenre, genre + '_sample.wav');
+            document.getElementById('drop-title').innerText = 'Mẫu thử: ' + genre.toUpperCase();
+            loadAudio('/samples/' + genre, genre + '_sample.wav');
         }
 
-        // Mic Recording Functionality
+        // --- NATIVE 16KHz PCM WAV RECORDER (Guarantees 100% genuine WAV bytes) ---
         async function toggleRecordState() {
             const btn = document.getElementById('record-action-btn');
+            const btnText = document.getElementById('record-btn-text');
             const timerEl = document.getElementById('record-timer');
             const statusEl = document.getElementById('record-status-label');
+            const pulseRing = document.getElementById('mic-pulse-ring');
 
             if (!isRecording) {
                 try {
-                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                    mediaRecorder = new MediaRecorder(stream);
-                    recordedChunks = [];
+                    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                    audioContext = new AudioCtx();
+                    mediaStreamSource = audioContext.createMediaStreamSource(micStream);
+                    scriptProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+                    pcmBuffer = [];
                     recordSeconds = 0;
 
-                    mediaRecorder.ondataavailable = e => {
-                        if (e.data.size > 0) recordedChunks.push(e.data);
+                    scriptProcessor.onaudioprocess = (e) => {
+                        if (!isRecording) return;
+                        const channelData = e.inputBuffer.getChannelData(0);
+                        pcmBuffer.push(new Float32Array(channelData));
                     };
 
-                    mediaRecorder.onstop = () => {
-                        clearInterval(recordInterval);
-                        const audioBlob = new Blob(recordedChunks, { type: 'audio/wav' });
-                        currentFileObj = new File([audioBlob], 'live_recording.wav', { type: 'audio/wav' });
-                        const audioUrl = URL.createObjectURL(audioBlob);
-                        loadAudio(audioUrl, 'Mic Record', 'live_recording.wav');
-                        statusEl.innerText = 'Đã ghi âm xong ( sẵn sàng dự đoán )';
-                        btn.innerText = 'Bắt đầu ghi âm mới';
-                        btn.className = 'px-5 py-2 rounded-xl text-xs font-semibold bg-rose-600 hover:bg-rose-500 text-white shadow-lg transition';
-                    };
+                    mediaStreamSource.connect(scriptProcessor);
+                    scriptProcessor.connect(audioContext.destination);
 
-                    mediaRecorder.start();
                     isRecording = true;
                     statusEl.innerText = 'Đang thu âm... Hãy hát hoặc mở nhạc gần mic';
-                    btn.innerText = 'Dừng ghi âm';
-                    btn.className = 'px-5 py-2 rounded-xl text-xs font-semibold bg-slate-700 hover:bg-slate-600 text-white transition';
+                    btnText.innerText = 'Dừng & Lưu ghi âm';
+                    btn.className = 'px-5 py-2.5 rounded-xl text-xs font-semibold bg-slate-700 hover:bg-slate-600 text-white shadow-lg transition flex items-center space-x-1.5';
+                    pulseRing.classList.add('animate-pulse');
 
                     recordInterval = setInterval(() => {
                         recordSeconds++;
@@ -852,16 +832,116 @@ def serve_ui():
                     }, 1000);
 
                 } catch (err) {
-                    alert('Không thể mở microphone: ' + err.message);
+                    alert('Không thể truy cập microphone: ' + err.message);
                 }
             } else {
-                mediaRecorder.stop();
+                // Stop recording & finalize PCM WAV
                 isRecording = false;
+                clearInterval(recordInterval);
+                pulseRing.classList.remove('animate-pulse');
+
+                if (micStream) {
+                    micStream.getTracks().forEach(t => t.stop());
+                }
+                if (scriptProcessor) scriptProcessor.disconnect();
+                if (mediaStreamSource) mediaStreamSource.disconnect();
+
+                // Merge PCM chunks
+                let totalLength = 0;
+                for (let i = 0; i < pcmBuffer.length; i++) totalLength += pcmBuffer[i].length;
+                const mergedFloat32 = new Float32Array(totalLength);
+                let offset = 0;
+                for (let i = 0; i < pcmBuffer.length; i++) {
+                    mergedFloat32.set(pcmBuffer[i], offset);
+                    offset += pcmBuffer[i].length;
+                }
+
+                // Downsample to 16000 Hz if needed
+                const inRate = audioContext ? audioContext.sampleRate : 44100;
+                const targetRate = 16000;
+                const finalPcm = downsamplePCM(mergedFloat32, inRate, targetRate);
+
+                // Encode to real RIFF/WAVE PCM 16-bit
+                const wavBlob = encodeWAV16Bit(finalPcm, targetRate);
+                currentFileObj = new File([wavBlob], 'live_mic_record.wav', { type: 'audio/wav' });
+                currentLoadedGenre = null;
+
+                const audioUrl = URL.createObjectURL(wavBlob);
+                loadAudio(audioUrl, 'Bản ghi âm');
+
+                statusEl.innerText = 'Đã ghi âm xong (sẵn sàng dự đoán)';
+                btnText.innerText = 'Bắt đầu ghi âm mới';
+                btn.className = 'px-5 py-2.5 rounded-xl text-xs font-semibold bg-rose-600 hover:bg-rose-500 text-white shadow-lg transition flex items-center space-x-1.5';
             }
+        }
+
+        function downsamplePCM(buffer, fromRate, toRate) {
+            if (fromRate === toRate) return buffer;
+            const ratio = fromRate / toRate;
+            const newLen = Math.round(buffer.length / ratio);
+            const result = new Float32Array(newLen);
+            let offsetResult = 0;
+            let offsetBuffer = 0;
+            while (offsetResult < result.length) {
+                const nextOffsetBuffer = Math.round((offsetResult + 1) * ratio);
+                let accum = 0, count = 0;
+                for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) {
+                    accum += buffer[i];
+                    count++;
+                }
+                result[offsetResult] = count > 0 ? (accum / count) : 0;
+                offsetResult++;
+                offsetBuffer = nextOffsetBuffer;
+            }
+            return result;
+        }
+
+        function encodeWAV16Bit(samples, sampleRate) {
+            const buffer = new ArrayBuffer(44 + samples.length * 2);
+            const view = new DataView(buffer);
+
+            function writeStr(offset, str) {
+                for (let i = 0; i < str.length; i++) {
+                    view.setUint8(offset + i, str.charCodeAt(i));
+                }
+            }
+
+            // RIFF identifier
+            writeStr(0, 'RIFF');
+            view.setUint32(4, 36 + samples.length * 2, true);
+            writeStr(8, 'WAVE');
+
+            // fmt sub-chunk
+            writeStr(12, 'fmt ');
+            view.setUint32(16, 16, true);
+            view.setUint16(20, 1, true); // Raw PCM
+            view.setUint16(22, 1, true); // Mono 1 channel
+            view.setUint32(24, sampleRate, true);
+            view.setUint32(28, sampleRate * 2, true); // Byte rate
+            view.setUint16(32, 2, true); // Block align
+            view.setUint16(34, 16, true); // 16 bits
+
+            // data sub-chunk
+            writeStr(36, 'data');
+            view.setUint32(40, samples.length * 2, true);
+
+            // Write 16-bit PCM integer samples
+            let ptr = 44;
+            for (let i = 0; i < samples.length; i++, ptr += 2) {
+                let s = Math.max(-1, Math.min(1, samples[i]));
+                view.setInt16(ptr, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+            }
+
+            return new Blob([buffer], { type: 'audio/wav' });
         }
 
         // Execute Prediction
         async function executePrediction() {
+            if (!currentFileObj && !currentLoadedGenre) {
+                alert('Vui lòng chọn một tệp âm thanh, ghi âm qua mic hoặc chọn mẫu thử trước khi bấm dự đoán.');
+                return;
+            }
+
             const btnText = document.getElementById('predict-btn-text');
             const spinner = document.getElementById('predict-spinner');
             const btnIcon = document.getElementById('predict-btn-icon');
@@ -876,24 +956,35 @@ def serve_ui():
             try {
                 let data = null;
                 if (currentFileObj) {
-                    // Upload user file or mic recording
                     const formData = new FormData();
                     formData.append('file', currentFileObj);
                     const res = await fetch('/predict', { method: 'POST', body: formData });
+                    if (!res.ok) {
+                        const errData = await res.json().catch(() => ({}));
+                        throw new Error(errData.detail || 'Máy chủ trả về mã lỗi ' + res.status);
+                    }
                     data = await res.json();
-                } else {
-                    // Use currently loaded sample
+                } else if (currentLoadedGenre) {
                     const genreKey = currentLoadedGenre.toLowerCase();
                     const res = await fetch('/sample-predict/' + genreKey, { method: 'POST' });
+                    if (!res.ok) {
+                        const errData = await res.json().catch(() => ({}));
+                        throw new Error(errData.detail || 'Máy chủ trả về mã lỗi ' + res.status);
+                    }
                     data = await res.json();
+                }
+
+                if (!data || !data.predicted_genre) {
+                    throw new Error('Dữ liệu kết quả không hợp lệ.');
                 }
 
                 renderPredictionResult(data);
                 addHistoryRecord(data);
+
                 statusPill.className = 'px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-950/60 text-emerald-400 border border-emerald-800';
                 statusPill.innerText = 'Phân tích xong';
             } catch (err) {
-                alert('Lỗi suy luận: ' + err.message);
+                alert('Lỗi dự đoán: ' + err.message);
                 statusPill.className = 'px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-rose-950/60 text-rose-400 border border-rose-800';
                 statusPill.innerText = 'Lỗi';
             } finally {
@@ -905,27 +996,29 @@ def serve_ui():
 
         // Render Prediction Result
         function renderPredictionResult(data) {
-            const genre = data.predicted_genre || 'Jazz';
+            const genre = data.predicted_genre || '--';
             document.getElementById('result-genre-title').innerText = genre;
             document.getElementById('genre-avatar-box').innerText = genreEmojis[genre] || '🎵';
             
-            const confPct = ((data.confidence || 0.924) * 100).toFixed(1) + '%';
+            const confPct = ((data.confidence || 0) * 100).toFixed(1) + '%';
             document.getElementById('result-conf-pill').innerText = 'Độ tin cậy: ' + confPct;
+            document.getElementById('result-conf-pill').className = 'text-xs font-bold text-blue-400 font-mono bg-blue-950/80 px-2 py-0.5 rounded-md border border-blue-700/60';
             document.getElementById('result-sublabel').innerText = data.genre_sublabel || `Nhạc ${genre} • Nhãn hàng đầu`;
             document.getElementById('result-latency').innerText = `${data.latency_ms || 14.2} ms (${data.device || 'CPU'})`;
+            document.getElementById('domain-dot').className = 'w-2 h-2 rounded-full bg-emerald-400';
+            document.getElementById('domain-text').className = 'text-emerald-300';
+            document.getElementById('domain-text').innerText = 'Đã thích nghi';
 
-            // Render Ranked Probability Bars
+            // Show probability list & hide placeholder
+            document.getElementById('probability-placeholder').classList.add('hidden');
             const listEl = document.getElementById('probability-list');
+            listEl.classList.remove('hidden');
             listEl.innerHTML = '';
-            const topList = data.top_predictions || [
-                { genre: 'Jazz', confidence: 0.924 },
-                { genre: 'Blues', confidence: 0.051 },
-                { genre: 'Classical', confidence: 0.025 }
-            ];
 
+            const topList = data.top_predictions || [];
             topList.forEach((item, idx) => {
                 const pct = (item.confidence * 100).toFixed(1);
-                const barColor = idx === 0 ? 'bg-gradient-to-r from-blue-500 to-cyan-400 glow-blue-bar' : 'bg-blue-600/' + (60 - idx * 20);
+                const barColor = idx === 0 ? 'bg-gradient-to-r from-blue-500 to-cyan-400 glow-blue-bar' : 'bg-blue-600/' + Math.max(20, 60 - idx * 20);
                 listEl.innerHTML += `
                     <div>
                         <div class="flex justify-between text-xs font-medium mb-1">
