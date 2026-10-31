@@ -12,6 +12,10 @@ dist/
 build/
 *.torchscript.pt
 data/MusicGenre/*.pt
+data/audio/*/*_00[2-9]*.wav
+data/audio/*/*_0[1-9]*.wav
+data/audio/*/*_1*.wav
+data/audio/*/*_2*.wav
 .DS_Store
 Thumbs.db
 

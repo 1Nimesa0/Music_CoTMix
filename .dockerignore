@@ -1,0 +1,38 @@
+# Git & CI/CD
+.git
+.github
+.gitignore
+
+# Python cache & virtual environments
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# Training logs & experiments
+wandb/
+experiments_logs/
+load_test_k6.js
+
+# Notebooks & reports
+*.ipynb
+Music_Genre_EDA_and_Visualization.ipynb
+*.docx
+*.pdf
+
+# Environment & local secrets
+.env
+.env.*
+
+# TorchScript & local large checkpoints (keep cnn & dinov3 .pt)
+models/checkpoints/*.torchscript.pt
+data/MusicGenre/
+
+# Optimize image size: Keep only essential audio samples (0001 to 0005) for preset demo
+data/audio/*/*_00[1-9]*.wav
+!data/audio/*/*_000[1-5].wav
+data/audio/*/*_0[1-9]*.wav
+data/audio/*/*_1*.wav
+data/audio/*/*_2*.wav
