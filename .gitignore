@@ -18,4 +18,12 @@ data/audio/*/*_1*.wav
 data/audio/*/*_2*.wav
 .DS_Store
 Thumbs.db
+~$*
+*.tmp
+
+# Test Reports and visual generators (local only)
+Bao_Cao_*
+report_assets/
+create_report_visuals.py
+generate_ai_testing_report_pdf.py
 
